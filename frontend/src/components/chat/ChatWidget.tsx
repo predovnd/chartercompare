@@ -5,7 +5,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatComposer } from './ChatComposer';
 import { RotateCcw } from 'lucide-react';
-import { startChat, sendMessage, loadChatState, clearChatState } from '@/lib/mockApi';
+import { startChat, sendMessage } from '@/lib/api';
 import type { ChatMessage, CharterRequest } from '@/types';
 import { motion } from 'framer-motion';
 import { Card as SuccessCard, CardContent as SuccessCardContent, CardHeader as SuccessCardHeader, CardTitle as SuccessCardTitle } from '../ui/card';
@@ -25,7 +25,6 @@ export function ChatWidget() {
 
   useEffect(() => {
     // Always initialize chat on first load
-    // If there's saved state, it will be used when user sends first message
     initializeChat();
   }, []);
 
@@ -44,6 +43,14 @@ export function ChatWidget() {
       setMessages([botMessage]);
     } catch (error) {
       console.error('Failed to start chat:', error);
+      const errorMessage: ChatMessage = {
+        id: `msg-${Date.now()}-error`,
+        text: "Sorry, I'm having trouble connecting. Please check if the API server is running.",
+        sender: 'bot',
+        timestamp: new Date(),
+        icon: 'AlertCircle',
+      };
+      setMessages([errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -83,7 +90,9 @@ export function ChatWidget() {
       console.error('Failed to send message:', error);
       const errorMessage: ChatMessage = {
         id: `msg-${Date.now()}-error`,
-        text: "Sorry, something went wrong. Please try again.",
+        text: error instanceof Error 
+          ? `Sorry, ${error.message}. Please try again.`
+          : "Sorry, something went wrong. Please try again.",
         sender: 'bot',
         timestamp: new Date(),
         icon: 'AlertCircle',
@@ -95,7 +104,6 @@ export function ChatWidget() {
   };
 
   const handleReset = () => {
-    clearChatState();
     setMessages([]);
     setSessionId(null);
     setIsComplete(false);
