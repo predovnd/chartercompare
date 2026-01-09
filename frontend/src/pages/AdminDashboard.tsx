@@ -143,21 +143,32 @@ export function AdminDashboard() {
 
   const loadUsers = async () => {
     try {
+      console.log('Loading users from:', `${API_BASE_URL}/api/admin/users`);
       const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
         credentials: 'include',
       });
+      console.log('Users response status:', response.status, response.statusText);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Users data received:', data);
+        console.log('Is array?', Array.isArray(data));
+        console.log('Data length:', Array.isArray(data) ? data.length : 'not an array');
+        
         // Handle both array response and object with users property
         if (Array.isArray(data)) {
+          console.log('Setting users array, count:', data.length);
           setUsers(data);
         } else if (data.users && Array.isArray(data.users)) {
+          console.log('Setting users from data.users, count:', data.users.length);
           setUsers(data.users);
         } else {
+          console.warn('Unexpected data format:', data);
           setUsers([]);
         }
       } else {
-        console.error('Failed to load users:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Failed to load users:', response.status, response.statusText, errorText);
         setUsers([]);
       }
     } catch (error) {

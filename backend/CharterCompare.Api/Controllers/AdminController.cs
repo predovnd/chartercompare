@@ -54,10 +54,20 @@ public class AdminController : ControllerBase
             return Forbid("Admin access required");
         }
 
-        var query = new GetAdminUsersQuery();
-        var response = await _mediator.Send(query);
-
-        return Ok(response.Users);
+        try
+        {
+            _logger.LogInformation("Admin users endpoint called");
+            var query = new GetAdminUsersQuery();
+            var response = await _mediator.Send(query);
+            
+            _logger.LogInformation("Returning {Count} users", response.Users?.Count ?? 0);
+            return Ok(response.Users);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting users: {Error}", ex.Message);
+            return StatusCode(500, new { error = "Failed to retrieve users", message = ex.Message });
+        }
     }
 
     [HttpGet("requests")]

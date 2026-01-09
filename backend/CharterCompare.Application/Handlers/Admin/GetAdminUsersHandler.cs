@@ -19,33 +19,46 @@ public class GetAdminUsersHandler : IRequestHandler<GetAdminUsersQuery, GetAdmin
 
     public async Task<GetAdminUsersResponse> Handle(GetAdminUsersQuery request, CancellationToken cancellationToken)
     {
-        var allUsers = await _storage.GetAllUsersAsync(cancellationToken);
-        var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
-        
-        var userDtos = allUsers.Select(u => new UserDto
+        try
         {
-            Id = u.Id,
-            Email = u.Email,
-            Name = u.Name,
-            CompanyName = u.CompanyName,
-            Phone = u.Phone,
-            ExternalProvider = u.ExternalProvider,
-            IsAdmin = u.IsAdmin,
-            IsActive = u.IsActive,
-            CreatedAt = u.CreatedAt,
-            LastLoginAt = u.LastLoginAt,
-            QuoteCount = u.Quotes.Count,
-            RequestCount = u.Role == Domain.Enums.UserRole.Requester 
-                ? u.Requests.Count 
-                : allRequests.Count(r => r.Quotes.Any(q => q.ProviderId == u.Id)),
-            UserType = u.Role == Domain.Enums.UserRole.Admin ? "admin" :
-                       u.Role == Domain.Enums.UserRole.Operator ? "operator" : "requester",
-            Attributes = u.Attributes.Select(a => a.AttributeType.ToString()).ToList()
-        }).OrderBy(u => u.CreatedAt).ToList();
+            _logger.LogInformation("Getting all users for admin dashboard...");
+            var allUsers = await _storage.GetAllUsersAsync(cancellationToken);
+            _logger.LogInformation("Retrieved {Count} users from database", allUsers.Count);
+            
+            var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
+            _logger.LogInformation("Retrieved {Count} requests from database", allRequests.Count);
+            
+            var userDtos = allUsers.Select(u => new UserDto
+            {
+                Id = u.Id,
+                Email = u.Email,
+                Name = u.Name,
+                CompanyName = u.CompanyName,
+                Phone = u.Phone,
+                ExternalProvider = u.ExternalProvider,
+                IsAdmin = u.IsAdmin,
+                IsActive = u.IsActive,
+                CreatedAt = u.CreatedAt,
+                LastLoginAt = u.LastLoginAt,
+                QuoteCount = u.Quotes?.Count ?? 0,
+                RequestCount = u.Role == Domain.Enums.UserRole.Requester 
+                    ? (u.Requests?.Count ?? 0)
+                    : allRequests.Count(r => r.Quotes?.Any(q => q.ProviderId == u.Id) ?? false),
+                UserType = u.Role == Domain.Enums.UserRole.Admin ? "admin" :
+                           u.Role == Domain.Enums.UserRole.Operator ? "operator" : "requester",
+                Attributes = u.Attributes?.Select(a => a.AttributeType.ToString()).ToList() ?? new List<string>()
+            }).OrderBy(u => u.CreatedAt).ToList();
 
-        return new GetAdminUsersResponse
+            _logger.LogInformation("Returning {Count} user DTOs", userDtos.Count);
+            return new GetAdminUsersResponse
+            {
+                Users = userDtos
+            };
+        }
+        catch (Exception ex)
         {
-            Users = userDtos
-        };
+            _logger.LogError(ex, "Error getting users for admin dashboard: {Error}", ex.Message);
+            throw;
+        }
     }
 }

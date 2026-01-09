@@ -146,38 +146,47 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
     {
         try
         {
-            // Check if OperatorType column exists and drop it
-            var operatorTypeExists = await _dbContext.Database.SqlQueryRaw<int>(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'OperatorType'"
-            ).FirstOrDefaultAsync(cancellationToken);
-
-            if (operatorTypeExists > 0)
+            // Drop OperatorType column if it exists (using IF EXISTS to avoid errors)
+            _logger.LogInformation("Checking for OperatorType column...");
+            try
             {
-                _logger.LogInformation("Dropping old OperatorType column from Users table...");
                 await _dbContext.Database.ExecuteSqlRawAsync(@"
-                    ALTER TABLE Users DROP COLUMN OperatorType
+                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'OperatorType')
+                    BEGIN
+                        ALTER TABLE Users DROP COLUMN OperatorType
+                        PRINT 'OperatorType column dropped successfully.'
+                    END
                 ", cancellationToken);
-                _logger.LogInformation("OperatorType column dropped.");
+                _logger.LogInformation("OperatorType column check/drop completed.");
+            }
+            catch (Exception dropEx)
+            {
+                _logger.LogWarning(dropEx, "Could not drop OperatorType column (it may not exist): {Error}", dropEx.Message);
             }
 
-            // Check if RequesterType column exists and drop it
-            var requesterTypeExists = await _dbContext.Database.SqlQueryRaw<int>(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'RequesterType'"
-            ).FirstOrDefaultAsync(cancellationToken);
-
-            if (requesterTypeExists > 0)
+            // Drop RequesterType column if it exists (using IF EXISTS to avoid errors)
+            _logger.LogInformation("Checking for RequesterType column...");
+            try
             {
-                _logger.LogInformation("Dropping old RequesterType column from Users table...");
                 await _dbContext.Database.ExecuteSqlRawAsync(@"
-                    ALTER TABLE Users DROP COLUMN RequesterType
+                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'RequesterType')
+                    BEGIN
+                        ALTER TABLE Users DROP COLUMN RequesterType
+                        PRINT 'RequesterType column dropped successfully.'
+                    END
                 ", cancellationToken);
-                _logger.LogInformation("RequesterType column dropped.");
+                _logger.LogInformation("RequesterType column check/drop completed.");
+            }
+            catch (Exception dropEx)
+            {
+                _logger.LogWarning(dropEx, "Could not drop RequesterType column (it may not exist): {Error}", dropEx.Message);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not drop old type columns (they may not exist): {Error}", ex.Message);
-            // Don't throw - these columns may not exist, which is fine
+            _logger.LogWarning(ex, "Error attempting to drop old type columns: {Error}", ex.Message);
+            // Don't throw - log the error but continue, as these columns may not exist or may need manual removal
+            _logger.LogInformation("If columns still exist, please run Scripts/DropOldTypeColumns.sql manually.");
         }
     }
 
