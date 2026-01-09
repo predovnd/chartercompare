@@ -30,6 +30,16 @@ builder.Services.AddScoped<IStorage, SqlStorage>();
 // Register Database Migrator (Infrastructure)
 builder.Services.AddScoped<CharterCompare.Infrastructure.Migrations.IDatabaseMigrator, CharterCompare.Infrastructure.Migrations.SqlServerDatabaseMigrator>();
 
+// Register Geocoding Service
+builder.Services.AddHttpClient<CharterCompare.Application.Services.NominatimGeocodingService>();
+builder.Services.AddScoped<CharterCompare.Application.Services.IGeocodingService>(sp =>
+{
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient(nameof(CharterCompare.Application.Services.NominatimGeocodingService));
+    var logger = sp.GetRequiredService<ILogger<CharterCompare.Application.Services.NominatimGeocodingService>>();
+    return new CharterCompare.Application.Services.NominatimGeocodingService(httpClient, logger);
+});
+
 // Register MediatR
 builder.Services.AddScoped<IMediator, SimpleMediator>();
 
@@ -47,6 +57,14 @@ builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<Ch
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminUsersQuery, CharterCompare.Application.Requests.Admin.GetAdminUsersResponse>, CharterCompare.Application.Handlers.Admin.GetAdminUsersHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminRequestsQuery, CharterCompare.Application.Requests.Admin.GetAdminRequestsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminRequestsHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.UpdateUserAttributesCommand, CharterCompare.Application.Requests.Admin.UpdateUserAttributesResponse>, CharterCompare.Application.Handlers.Admin.UpdateUserAttributesHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.ConfigureOperatorCoverageCommand, CharterCompare.Application.Requests.Admin.ConfigureOperatorCoverageResponse>, CharterCompare.Application.Handlers.Admin.ConfigureOperatorCoverageHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetOperatorCoveragesQuery, CharterCompare.Application.Requests.Admin.GetOperatorCoveragesResponse>, CharterCompare.Application.Handlers.Admin.GetOperatorCoveragesHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.UpdateOperatorCoverageCommand, CharterCompare.Application.Requests.Admin.UpdateOperatorCoverageResponse>, CharterCompare.Application.Handlers.Admin.UpdateOperatorCoverageHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.DeleteOperatorCoverageCommand, CharterCompare.Application.Requests.Admin.DeleteOperatorCoverageResponse>, CharterCompare.Application.Handlers.Admin.DeleteOperatorCoverageHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.UpdateRequestLocationCommand, CharterCompare.Application.Requests.Admin.UpdateRequestLocationResponse>, CharterCompare.Application.Handlers.Admin.UpdateRequestLocationHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.PublishRequestCommand, CharterCompare.Application.Requests.Admin.PublishRequestResponse>, CharterCompare.Application.Handlers.Admin.PublishRequestHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.WithdrawRequestCommand, CharterCompare.Application.Requests.Admin.WithdrawRequestResponse>, CharterCompare.Application.Handlers.Admin.WithdrawRequestHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.UpdateUserActiveStatusCommand, CharterCompare.Application.Requests.Admin.UpdateUserActiveStatusResponse>, CharterCompare.Application.Handlers.Admin.UpdateUserActiveStatusHandler>();
 
 // Register legacy services (ChatService still uses old models)
 builder.Services.AddScoped<CharterCompare.Api.Services.IChatService, CharterCompare.Api.Services.ChatService>();

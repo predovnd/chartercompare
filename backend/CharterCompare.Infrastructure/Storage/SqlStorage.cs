@@ -4,6 +4,7 @@ using CharterCompare.Domain.Enums;
 using CharterCompare.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using OperatorCoverage = CharterCompare.Domain.Entities.OperatorCoverage;
 
 namespace CharterCompare.Infrastructure.Storage;
 
@@ -67,6 +68,7 @@ public class SqlStorage : IStorage
             .Include(u => u.Quotes)
             .Include(u => u.Requests)
             .Include(u => u.Attributes)
+            .Include(u => u.OperatorCoverages)
             .ToListAsync(cancellationToken);
     }
 
@@ -152,7 +154,7 @@ public class SqlStorage : IStorage
     {
         return await _dbContext.CharterRequests
             .Include(r => r.Quotes)
-            .Where(r => r.Status == RequestStatus.Open)
+            .Where(r => r.Status == RequestStatus.Published)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -282,5 +284,45 @@ public class SqlStorage : IStorage
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // OperatorCoverage operations
+    public async Task<OperatorCoverage?> GetOperatorCoverageByIdAsync(int coverageId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.OperatorCoverages
+            .Include(c => c.Operator)
+            .FirstOrDefaultAsync(c => c.Id == coverageId, cancellationToken);
+    }
+
+    public async Task<List<OperatorCoverage>> GetOperatorCoveragesByOperatorIdAsync(int operatorId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.OperatorCoverages
+            .Where(c => c.OperatorId == operatorId)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<OperatorCoverage> CreateOperatorCoverageAsync(OperatorCoverage coverage, CancellationToken cancellationToken = default)
+    {
+        _dbContext.OperatorCoverages.Add(coverage);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return coverage;
+    }
+
+    public async Task UpdateOperatorCoverageAsync(OperatorCoverage coverage, CancellationToken cancellationToken = default)
+    {
+        coverage.UpdatedAt = DateTime.UtcNow;
+        _dbContext.OperatorCoverages.Update(coverage);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteOperatorCoverageAsync(int coverageId, CancellationToken cancellationToken = default)
+    {
+        var coverage = await _dbContext.OperatorCoverages.FindAsync(new object[] { coverageId }, cancellationToken);
+        if (coverage != null)
+        {
+            _dbContext.OperatorCoverages.Remove(coverage);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 }

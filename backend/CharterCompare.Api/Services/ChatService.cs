@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using CharterCompare.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 
 namespace CharterCompare.Api.Services;
 
@@ -11,24 +12,26 @@ public class ChatService : IChatService
     private readonly IMemoryCache _cache;
     private readonly ApplicationDbContext _dbContext;
     private readonly ILogger<ChatService> _logger;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private const string CacheKeyPrefix = "chat_session_";
 
-    public ChatService(IMemoryCache cache, ApplicationDbContext dbContext, ILogger<ChatService> logger)
+    public ChatService(IMemoryCache cache, ApplicationDbContext dbContext, ILogger<ChatService> logger, IHttpContextAccessor httpContextAccessor)
     {
         _cache = cache;
         _dbContext = dbContext;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public Task<StartChatResponse> StartChatAsync(StartChatRequest request)
     {
         var sessionId = GenerateSessionId();
-        var replyText = "Hey — it's Alex from Charter Compare. I can help you sort a charter bus. What's the trip for — for example a school trip, corporate event, wedding, sports team, or something else?";
+        var replyText = "Hey — it's Alex from Charter Compare. I can help you find a charter bus. Where do you need to be picked up from?";
 
         var initialState = new ChatState
         {
             SessionId = sessionId,
-            Step = ChatStep.TripType,
+            Step = ChatStep.Pickup,
             Data = new PartialCharterRequest(),
             IsComplete = false
         };
@@ -39,7 +42,7 @@ public class ChatService : IChatService
         {
             SessionId = sessionId,
             ReplyText = replyText,
-            Icon = GetIconForStep(ChatStep.TripType)
+            Icon = GetIconForStep(ChatStep.Pickup)
         });
     }
 
@@ -67,77 +70,16 @@ public class ChatService : IChatService
 
         switch (state.Step)
         {
-            case ChatStep.TripType:
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.Type = request.Text.Trim();
-                newState.Step = ChatStep.PassengerCount;
-                replyText = "About how many passengers will be travelling?";
-                icon = GetIconForStep(ChatStep.PassengerCount);
-                break;
-
-            case ChatStep.PassengerCount:
-                var count = ParsePassengerCount(request.Text);
-                if (count == null || count <= 0)
-                {
-                    replyText = "I need a number — about how many passengers will be travelling?";
-                    icon = GetIconForStep(ChatStep.PassengerCount, true);
-                    break;
-                }
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.PassengerCount = count.Value;
-                newState.Step = ChatStep.Date;
-                replyText = "What date is the trip? We're just booking single-day trips at the moment.";
-                icon = GetIconForStep(ChatStep.Date);
-                break;
-
-            case ChatStep.Date:
-                if (state.WaitingForDateConfirmation == true)
-                {
-                    var lower = request.Text.ToLower();
-                    if (lower.Contains("yes") || lower.Contains("yeah") || lower.Contains("yep") || lower.Contains("sure") || lower.Contains("ok"))
-                    {
-                        newState.WaitingForDateConfirmation = false;
-                        replyText = "What date is the trip?";
-                        icon = GetIconForStep(ChatStep.Date);
-                        break;
-                    }
-                    else
-                    {
-                        replyText = "No worries — we'll keep that in mind for future. For now, what date would work for a single-day trip?";
-                        newState.WaitingForDateConfirmation = false;
-                        icon = GetIconForStep(ChatStep.Date);
-                        break;
-                    }
-                }
-                if (IsMultiDayInput(request.Text))
-                {
-                    replyText = "At the moment we can only help with single-day trips — would it still work as a one-day booking?";
-                    newState.WaitingForDateConfirmation = true;
-                    icon = GetIconForStep(ChatStep.Date);
-                    break;
-                }
-                var dateParse = ParseDate(request.Text);
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.Date = new PartialDateInfo
-                {
-                    RawInput = request.Text.Trim(),
-                    ResolvedDate = dateParse.ResolvedDate,
-                    Confidence = dateParse.Confidence
-                };
-                newState.Step = ChatStep.Pickup;
-                replyText = "Where will everyone be picked up from? A suburb, landmark, or postcode is fine.";
-                icon = GetIconForStep(ChatStep.Pickup);
-                break;
-
             case ChatStep.Pickup:
                 newState.Data.Trip ??= new PartialTripInfo();
                 newState.Data.Trip.PickupLocation = new PartialLocationInfo
                 {
                     RawInput = request.Text.Trim(),
+                    ResolvedName = request.Text.Trim(),
                     Confidence = "low"
                 };
                 newState.Step = ChatStep.Destination;
-                replyText = "And where's the main destination or drop-off?";
+                replyText = "And where are you going to?";
                 icon = GetIconForStep(ChatStep.Destination);
                 break;
 
@@ -146,73 +88,41 @@ public class ChatService : IChatService
                 newState.Data.Trip.Destination = new PartialLocationInfo
                 {
                     RawInput = request.Text.Trim(),
+                    ResolvedName = request.Text.Trim(),
                     Confidence = "low"
                 };
-                newState.Step = ChatStep.TripFormat;
-                replyText = "Is it a one-way trip or a return on the same day?";
-                icon = GetIconForStep(ChatStep.TripFormat);
-                break;
-
-            case ChatStep.TripFormat:
-                var format = IsTripFormatClear(request.Text);
-                if (format == "unclear")
-                {
-                    replyText = "Just to confirm — one-way, or return on the same day?";
-                    icon = GetIconForStep(ChatStep.TripFormat, true);
-                    break;
-                }
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.TripFormat = format;
-                newState.Step = ChatStep.Timing;
-                replyText = "Do you have rough pickup and return times?";
-                icon = GetIconForStep(ChatStep.Timing);
-                break;
-
-            case ChatStep.Timing:
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.Timing = new PartialTimingInfo
-                {
-                    RawInput = request.Text.Trim()
-                };
-                newState.Step = ChatStep.Requirements;
-                replyText = "Any special requirements? For example luggage space, wheelchair access, or onboard features.";
-                icon = GetIconForStep(ChatStep.Requirements);
-                break;
-
-            case ChatStep.Requirements:
-                var requirements = ParseRequirements(request.Text);
-                newState.Data.Trip ??= new PartialTripInfo();
-                newState.Data.Trip.SpecialRequirements = requirements;
-                newState.Step = ChatStep.Email;
-                replyText = "What's the best email address to send the comparison results to?";
-                icon = GetIconForStep(ChatStep.Email);
-                break;
-
-            case ChatStep.Email:
-                if (!IsValidEmail(request.Text.Trim()))
-                {
-                    replyText = "That doesn't look like a valid email — what's the best email to send the results to?";
-                    icon = GetIconForStep(ChatStep.Email, true);
-                    break;
-                }
-                newState.Data.Customer ??= new PartialCustomerInfo();
-                newState.Data.Customer.Email = request.Text.Trim();
                 newState.Step = ChatStep.Complete;
-                replyText = "Great — I've got everything I need. I'll pass this through now and someone will be in touch shortly with the best available options.";
+                replyText = "Perfect! I've got your request. We'll send you quotes from available providers shortly.";
                 isComplete = true;
                 icon = GetIconForStep(ChatStep.Complete);
 
                 // Build final payload
                 finalPayload = BuildFinalPayload(newState);
 
-                // Save to database and file
+                // Save to database with raw JSON
                 if (finalPayload != null)
                 {
                     try
                     {
-                        await SaveRequestAsync(newState.SessionId, finalPayload);
-                        await WriteJsonToFileAsync(finalPayload);
-                        _logger.LogInformation("Request saved for session {SessionId}", newState.SessionId);
+                        var rawJson = System.Text.Json.JsonSerializer.Serialize(finalPayload, new System.Text.Json.JsonSerializerOptions
+                        {
+                            WriteIndented = true
+                        });
+                        
+                        // Get requester ID if user is authenticated
+                        int? requesterId = null;
+                        var httpContext = _httpContextAccessor.HttpContext;
+                        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+                        {
+                            var requesterIdClaim = httpContext.User.FindFirst("RequesterId")?.Value;
+                            if (requesterIdClaim != null && int.TryParse(requesterIdClaim, out var parsedId))
+                            {
+                                requesterId = parsedId;
+                            }
+                        }
+                        
+                        await SaveRequestAsync(newState.SessionId, finalPayload, rawJson, requesterId);
+                        _logger.LogInformation("Request saved for session {SessionId}, RequesterId: {RequesterId}", newState.SessionId, requesterId);
                     }
                     catch (Exception ex)
                     {
@@ -340,31 +250,30 @@ public class ChatService : IChatService
     private CharterRequest BuildFinalPayload(ChatState state)
     {
         var trip = state.Data.Trip ?? new PartialTripInfo();
-        var customer = state.Data.Customer ?? new PartialCustomerInfo();
 
         return new CharterRequest
         {
             Customer = new CustomerInfo
             {
-                FirstName = customer.FirstName ?? "",
-                LastName = customer.LastName ?? "",
-                Phone = customer.Phone ?? "",
-                Email = customer.Email ?? ""
+                FirstName = "",
+                LastName = "",
+                Phone = "",
+                Email = ""
             },
             Trip = new TripInfo
             {
-                Type = trip.Type ?? "",
-                PassengerCount = trip.PassengerCount ?? 0,
+                Type = "",
+                PassengerCount = 0,
                 Date = new DateInfo
                 {
-                    RawInput = trip.Date?.RawInput ?? "",
-                    ResolvedDate = trip.Date?.ResolvedDate ?? "",
-                    Confidence = trip.Date?.Confidence ?? "low"
+                    RawInput = "",
+                    ResolvedDate = "",
+                    Confidence = "low"
                 },
                 PickupLocation = new LocationInfo
                 {
                     RawInput = trip.PickupLocation?.RawInput ?? "",
-                    ResolvedName = trip.PickupLocation?.ResolvedName ?? "",
+                    ResolvedName = trip.PickupLocation?.ResolvedName ?? trip.PickupLocation?.RawInput ?? "",
                     Suburb = trip.PickupLocation?.Suburb ?? "",
                     State = trip.PickupLocation?.State ?? "",
                     Lat = trip.PickupLocation?.Lat,
@@ -374,21 +283,21 @@ public class ChatService : IChatService
                 Destination = new LocationInfo
                 {
                     RawInput = trip.Destination?.RawInput ?? "",
-                    ResolvedName = trip.Destination?.ResolvedName ?? "",
+                    ResolvedName = trip.Destination?.ResolvedName ?? trip.Destination?.RawInput ?? "",
                     Suburb = trip.Destination?.Suburb ?? "",
                     State = trip.Destination?.State ?? "",
                     Lat = trip.Destination?.Lat,
                     Lng = trip.Destination?.Lng,
                     Confidence = trip.Destination?.Confidence ?? "low"
                 },
-                TripFormat = trip.TripFormat ?? "one_way",
+                TripFormat = "one_way",
                 Timing = new TimingInfo
                 {
-                    RawInput = trip.Timing?.RawInput ?? "",
-                    PickupTime = trip.Timing?.PickupTime ?? "",
-                    ReturnTime = trip.Timing?.ReturnTime ?? ""
+                    RawInput = "",
+                    PickupTime = "",
+                    ReturnTime = ""
                 },
-                SpecialRequirements = trip.SpecialRequirements ?? new List<string>()
+                SpecialRequirements = new List<string>()
             },
             Meta = new RequestMeta
             {
@@ -398,7 +307,7 @@ public class ChatService : IChatService
         };
     }
 
-    private async Task SaveRequestAsync(string sessionId, CharterRequest request)
+    private async Task SaveRequestAsync(string sessionId, CharterRequest request, string rawJsonPayload, int? requesterId = null)
     {
         // Save to database
         // Convert from Api.Models.CharterRequest to Domain.Entities.CharterRequest
@@ -461,8 +370,10 @@ public class ChatService : IChatService
         {
             SessionId = sessionId,
             RequestData = domainRequest,
+            RawJsonPayload = rawJsonPayload,
+            RequesterId = requesterId,
             CreatedAt = DateTime.UtcNow,
-            Status = CharterCompare.Domain.Enums.RequestStatus.Open
+            Status = CharterCompare.Domain.Enums.RequestStatus.Draft // New requests start as Draft, need admin review
         };
         _dbContext.CharterRequests.Add(requestRecord);
         await _dbContext.SaveChangesAsync();

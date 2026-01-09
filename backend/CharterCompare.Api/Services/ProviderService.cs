@@ -66,7 +66,7 @@ public class ProviderService : IProviderService
     public async Task<List<CharterRequestRecord>> GetOpenRequestsAsync()
     {
         return await _dbContext.CharterRequests
-            .Where(r => r.Status == RequestStatus.Open)
+            .Where(r => r.Status == RequestStatus.Published)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
     }
@@ -96,7 +96,7 @@ public class ProviderService : IProviderService
 
         // Update request status if first quote
         var request = await _dbContext.CharterRequests.FindAsync(requestId);
-        if (request != null && request.Status == RequestStatus.Open)
+        if (request != null && request.Status == RequestStatus.Published)
         {
             request.Status = RequestStatus.QuotesReceived;
         }

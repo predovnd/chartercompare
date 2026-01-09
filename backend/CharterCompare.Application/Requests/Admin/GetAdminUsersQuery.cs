@@ -27,4 +27,5 @@ public class UserDto
     public int RequestCount { get; set; }
     public string UserType { get; set; } = string.Empty; // "operator" or "requester"
     public List<string> Attributes { get; set; } = new(); // List of attribute types (Bus, Airplane, Individual, Business, etc.)
+    public OperatorCoverageDto? Coverage { get; set; } // Coverage information for operators
 }

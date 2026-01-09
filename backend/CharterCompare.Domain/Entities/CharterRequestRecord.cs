@@ -7,10 +7,11 @@ public class CharterRequestRecord
     public int Id { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public CharterRequest RequestData { get; set; } = null!;
+    public string? RawJsonPayload { get; set; } // Store the raw JSON payload for admin viewing
     public int? RequesterId { get; set; } // Link to requester account (nullable for anonymous requests)
     public User? Requester { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public RequestStatus Status { get; set; } = RequestStatus.Open;
+    public RequestStatus Status { get; set; } = RequestStatus.Draft;
     public List<Quote> Quotes { get; set; } = new();
 }
 

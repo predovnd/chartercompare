@@ -29,7 +29,7 @@ public class GetAdminStatsHandler : IRequestHandler<GetAdminStatsQuery, GetAdmin
         return new GetAdminStatsResponse
         {
             TotalRequests = allRequests.Count,
-            OpenRequests = allRequests.Count(r => r.Status == RequestStatus.Open),
+            OpenRequests = allRequests.Count(r => r.Status == RequestStatus.Draft || r.Status == RequestStatus.UnderReview),
             TotalQuotes = allQuotes.Count,
             TotalOperators = operators,
             TotalRequesters = requesters

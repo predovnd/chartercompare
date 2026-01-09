@@ -28,6 +28,7 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                 _logger.LogInformation("Database does not exist. Creating database...");
                 await _dbContext.Database.EnsureCreatedAsync(cancellationToken);
                 await EnsureUserAttributesTableExistsAsync(cancellationToken);
+                await EnsureOperatorCoveragesTableExistsAsync(cancellationToken);
                 _logger.LogInformation("Database created successfully.");
                 return;
             }
@@ -47,7 +48,9 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                     _logger.LogInformation("Old schema (Providers/Requesters) detected.");
                     await CreateUsersTableAsync(cancellationToken);
                     await EnsureUserAttributesTableExistsAsync(cancellationToken);
+                    await EnsureOperatorCoveragesTableExistsAsync(cancellationToken);
                     await DropOldTypeColumnsAsync(cancellationToken);
+                    await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
                     await MigrateDataFromOldSchemaAsync(cancellationToken);
                 }
                 else
@@ -58,8 +61,14 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                     // Ensure UserAttributes table exists (EnsureCreated should create it, but verify)
                     await EnsureUserAttributesTableExistsAsync(cancellationToken);
                     
+                    // Ensure OperatorCoverages table exists
+                    await EnsureOperatorCoveragesTableExistsAsync(cancellationToken);
+                    
                     // Remove old columns if they exist
                     await DropOldTypeColumnsAsync(cancellationToken);
+                    
+                    // Ensure RawJsonPayload column exists
+                    await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
                     
                     _logger.LogInformation("Database schema created successfully.");
                 }
@@ -71,8 +80,14 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                 // Always ensure UserAttributes table exists when Users table exists
                 await EnsureUserAttributesTableExistsAsync(cancellationToken);
                 
+                // Ensure OperatorCoverages table exists
+                await EnsureOperatorCoveragesTableExistsAsync(cancellationToken);
+                
                 // Remove old OperatorType and RequesterType columns if they exist
                 await DropOldTypeColumnsAsync(cancellationToken);
+                
+                // Ensure RawJsonPayload column exists in CharterRequests table
+                await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
                 
                 // Check if old schema exists and migration is needed
                 var oldSchemaExists = await CheckTableExistsAsync("Providers", cancellationToken);
@@ -139,6 +154,87 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                 _logger.LogError(ex, "Failed to create UserAttributes table.");
                 throw;
             }
+        }
+    }
+
+    private async Task EnsureOperatorCoveragesTableExistsAsync(CancellationToken cancellationToken)
+    {
+        var tableExists = await CheckTableExistsAsync("OperatorCoverages", cancellationToken);
+        if (!tableExists)
+        {
+            _logger.LogInformation("Creating OperatorCoverages table...");
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'OperatorCoverages')
+                    BEGIN
+                        CREATE TABLE OperatorCoverages (
+                            Id INT PRIMARY KEY IDENTITY(1,1),
+                            OperatorId INT NOT NULL,
+                            BaseLocationName NVARCHAR(MAX) NOT NULL,
+                            Latitude FLOAT NULL,
+                            Longitude FLOAT NULL,
+                            CoverageRadiusKm FLOAT NOT NULL,
+                            MinPassengerCapacity INT NOT NULL,
+                            MaxPassengerCapacity INT NOT NULL,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            UpdatedAt DATETIME2 NULL,
+                            IsGeocoded BIT NOT NULL DEFAULT 0,
+                            GeocodingError NVARCHAR(MAX) NULL,
+                            FOREIGN KEY (OperatorId) REFERENCES Users(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_OperatorCoverages_OperatorId ON OperatorCoverages(OperatorId);
+                    END
+                ", cancellationToken);
+                _logger.LogInformation("OperatorCoverages table created.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create OperatorCoverages table.");
+                throw;
+            }
+        }
+    }
+
+    private async Task EnsureRawJsonPayloadColumnExistsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Check if CharterRequests table exists
+            var tableExists = await CheckTableExistsAsync("CharterRequests", cancellationToken);
+            if (!tableExists)
+            {
+                _logger.LogDebug("CharterRequests table does not exist, skipping RawJsonPayload column check.");
+                return;
+            }
+
+            // Add RawJsonPayload column if it doesn't exist (using IF NOT EXISTS)
+            _logger.LogInformation("Checking for RawJsonPayload column in CharterRequests table...");
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (
+                        SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_NAME = 'CharterRequests' AND COLUMN_NAME = 'RawJsonPayload'
+                    )
+                    BEGIN
+                        ALTER TABLE CharterRequests 
+                        ADD RawJsonPayload NVARCHAR(MAX) NULL
+                        PRINT 'RawJsonPayload column added successfully.'
+                    END
+                ", cancellationToken);
+                _logger.LogInformation("RawJsonPayload column check completed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not add RawJsonPayload column (it may already exist): {Error}", ex.Message);
+                // Don't throw - this is not critical
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check/add RawJsonPayload column: {Error}", ex.Message);
+            // Don't throw - this is not critical
         }
     }
 

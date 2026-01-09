@@ -25,11 +25,15 @@ public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, Ge
             Id = r.Id,
             SessionId = r.SessionId,
             RequestData = MapCharterRequest(r.RequestData),
+            RawJsonPayload = r.RawJsonPayload,
             Status = r.Status.ToString(),
             CreatedAt = r.CreatedAt,
             RequesterId = r.RequesterId,
             RequesterEmail = r.Requester?.Email,
-            QuoteCount = r.Quotes.Count
+            RequesterName = r.Requester?.Name,
+            QuoteCount = r.Quotes.Count,
+            HasLowConfidence = (r.RequestData.Trip.PickupLocation.Confidence == "low" || 
+                               r.RequestData.Trip.Destination.Confidence == "low")
         }).ToList();
 
         return new GetAdminRequestsResponse

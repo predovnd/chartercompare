@@ -16,11 +16,14 @@ public class AdminRequestDto
     public int Id { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public CharterRequestDto RequestData { get; set; } = null!;
+    public string? RawJsonPayload { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public int? RequesterId { get; set; }
     public string? RequesterEmail { get; set; }
+    public string? RequesterName { get; set; }
     public int QuoteCount { get; set; }
+    public bool HasLowConfidence { get; set; }
 }
 
 // Reuse DTOs from Provider namespace

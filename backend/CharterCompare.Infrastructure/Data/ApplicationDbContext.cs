@@ -14,6 +14,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CharterRequestRecord> CharterRequests { get; set; }
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<UserAttribute> UserAttributes { get; set; }
+    public DbSet<OperatorCoverage> OperatorCoverages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,8 @@ public class ApplicationDbContext : DbContext
                 .HasConversion(
                     v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null!),
                     v => System.Text.Json.JsonSerializer.Deserialize<CharterRequest>(v, (System.Text.Json.JsonSerializerOptions?)null!)!);
+            entity.Property(e => e.RawJsonPayload)
+                .IsRequired(false); // Make it optional
             entity.HasOne(e => e.Requester)
                 .WithMany(r => r.Requests)
                 .HasForeignKey(e => e.RequesterId)
@@ -62,6 +65,17 @@ public class ApplicationDbContext : DbContext
                 .WithMany(o => o.Quotes)
                 .HasForeignKey(e => e.ProviderId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OperatorCoverage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("OperatorCoverages");
+            entity.HasOne(e => e.Operator)
+                .WithMany(u => u.OperatorCoverages)
+                .HasForeignKey(e => e.OperatorId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.OperatorId);
         });
     }
 }

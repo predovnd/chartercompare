@@ -21,6 +21,7 @@ public class User
     public ICollection<Quote> Quotes { get; set; } = new List<Quote>();
     public ICollection<CharterRequestRecord> Requests { get; set; } = new List<CharterRequestRecord>();
     public ICollection<UserAttribute> Attributes { get; set; } = new List<UserAttribute>();
+    public ICollection<OperatorCoverage> OperatorCoverages { get; set; } = new List<OperatorCoverage>();
 
     // Helper properties
     public bool IsAdmin => Role == UserRole.Admin;

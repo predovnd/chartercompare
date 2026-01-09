@@ -3,7 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { LogOut, Bus, Shield, Users, FileText, DollarSign, TrendingUp, User, UserCheck, Edit, X, AlertCircle, Search } from 'lucide-react';
+import { LogOut, Bus, Shield, Users, FileText, DollarSign, TrendingUp, User, UserCheck, Edit, X, AlertCircle, Search, MapPin, Trash2, Settings, CheckCircle, XCircle } from 'lucide-react';
+import { CoverageMap } from '../components/CoverageMap';
+import { LocationEditor } from '../components/LocationEditor';
 import { useNavigate, Link } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -30,15 +32,30 @@ interface User {
   requestCount: number;
   userType: string; // "operator" or "requester"
   attributes: string[]; // List of attribute types (Bus, Airplane, Individual, Business, etc.)
+  coverage?: {
+    id: number;
+    baseLocationName: string;
+    latitude?: number;
+    longitude?: number;
+    coverageRadiusKm: number;
+    minPassengerCapacity: number;
+    maxPassengerCapacity: number;
+    isGeocoded: boolean;
+  };
 }
 
 interface Request {
   id: number;
   sessionId: string;
   requestData: any;
+  rawJsonPayload?: string;
   status: string;
   createdAt: string;
   quoteCount: number;
+  requesterId?: number;
+  requesterEmail?: string;
+  requesterName?: string;
+  hasLowConfidence?: boolean;
   quotes: Array<{
     id: number;
     providerName: string;
@@ -49,6 +66,22 @@ interface Request {
     status: string;
     createdAt: string;
   }>;
+}
+
+interface EditingRequest {
+  id: number;
+  pickupLocation: {
+    name: string;
+    latitude?: number;
+    longitude?: number;
+    confidence: string;
+  };
+  destination: {
+    name: string;
+    latitude?: number;
+    longitude?: number;
+    confidence: string;
+  };
 }
 
 // Attribute type mapping
@@ -75,6 +108,29 @@ export function AdminDashboard() {
   const [companyName, setCompanyName] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState<string>('');
+  const [expandedJsonRequests, setExpandedJsonRequests] = useState<Set<number>>(new Set());
+  const [showCoverageDialog, setShowCoverageDialog] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<EditingRequest | null>(null);
+  const [requestSaving, setRequestSaving] = useState(false);
+  const [coverageConfig, setCoverageConfig] = useState({
+    baseLocationName: '',
+    coverageRadiusKm: 50,
+    minPassengerCapacity: 1,
+    maxPassengerCapacity: 50
+  });
+  const [existingCoverage, setExistingCoverage] = useState<{
+    id: number;
+    baseLocationName: string;
+    latitude?: number;
+    longitude?: number;
+    coverageRadiusKm: number;
+    minPassengerCapacity: number;
+    maxPassengerCapacity: number;
+    isGeocoded: boolean;
+  } | null>(null);
+  const [coverageSaving, setCoverageSaving] = useState(false);
+  const [loadingCoverage, setLoadingCoverage] = useState(false);
+  const [isEditingCoverage, setIsEditingCoverage] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -273,6 +329,100 @@ export function AdminDashboard() {
     }
   };
 
+  const handleSaveCoverage = async () => {
+    if (!editingUser) return;
+
+    setCoverageSaving(true);
+    try {
+      const url = existingCoverage && isEditingCoverage
+        ? `${API_BASE_URL}/api/admin/operators/coverage/${existingCoverage.id}`
+        : `${API_BASE_URL}/api/admin/operators/${editingUser.id}/coverage`;
+      
+      const method = existingCoverage && isEditingCoverage ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(coverageConfig),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.isGeocoded) {
+          alert(existingCoverage && isEditingCoverage 
+            ? 'Coverage updated successfully! Location was geocoded.' 
+            : 'Coverage configured successfully! Location was geocoded.');
+        } else {
+          alert(`Coverage saved, but location could not be geocoded: ${data.geocodingError || 'Unknown error'}`);
+        }
+        // Reload coverage
+        if (editingUser) {
+          const coverageResponse = await fetch(`${API_BASE_URL}/api/admin/operators/${editingUser.id}/coverage`, {
+            credentials: 'include',
+          });
+          if (coverageResponse.ok) {
+            const coverage = await coverageResponse.json();
+            if (coverage && coverage.id) {
+              setExistingCoverage(coverage);
+              setCoverageConfig({
+                baseLocationName: coverage.baseLocationName,
+                coverageRadiusKm: coverage.coverageRadiusKm,
+                minPassengerCapacity: coverage.minPassengerCapacity,
+                maxPassengerCapacity: coverage.maxPassengerCapacity
+              });
+              setIsEditingCoverage(false);
+            }
+          }
+        }
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to save coverage');
+      }
+    } catch (error) {
+      console.error('Failed to save coverage:', error);
+      alert('Failed to save coverage');
+    } finally {
+      setCoverageSaving(false);
+    }
+  };
+
+  const handleDeleteCoverage = async () => {
+    if (!editingUser || !existingCoverage) return;
+
+    if (!confirm('Are you sure you want to delete this coverage location?')) {
+      return;
+    }
+
+    setCoverageSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/operators/coverage/${existingCoverage.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        alert('Coverage deleted successfully');
+        setExistingCoverage(null);
+        setCoverageConfig({
+          baseLocationName: '',
+          coverageRadiusKm: 50,
+          minPassengerCapacity: 1,
+          maxPassengerCapacity: 50
+        });
+        setIsEditingCoverage(false);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete coverage');
+      }
+    } catch (error) {
+      console.error('Failed to delete coverage:', error);
+      alert('Failed to delete coverage');
+    } finally {
+      setCoverageSaving(false);
+    }
+  };
+
   const getAttributeBadgeColor = (attribute: string) => {
     if (OPERATOR_ATTRIBUTES.includes(attribute)) {
       return 'bg-blue-100 text-blue-800';
@@ -310,6 +460,25 @@ export function AdminDashboard() {
     }
     
     return false;
+  };
+
+  const normalizeLocationName = (name: string): string => {
+    if (!name) return name;
+    
+    // Split by common delimiters and capitalize each word
+    // Handle common abbreviations and special cases
+    const words = name.split(/[\s,]+/);
+    const abbreviations = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT', 'St', 'Ave', 'Rd', 'Dr'];
+    
+    return words.map((word, index) => {
+      const upperWord = word.toUpperCase();
+      // Keep abbreviations as uppercase
+      if (abbreviations.includes(upperWord)) {
+        return upperWord;
+      }
+      // Capitalize first letter, lowercase the rest
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(' ');
   };
 
   const filterUsers = (users: User[], query: string): User[] => {
@@ -515,7 +684,7 @@ export function AdminDashboard() {
                     return (
                       <div 
                         key={user.id} 
-                        className={`flex items-center justify-between p-4 border rounded-lg ${
+                        className={`flex items-start justify-between p-4 border rounded-lg ${
                           hasMissingAttributes ? 'border-yellow-400 bg-yellow-50/50' : ''
                         }`}
                       >
@@ -554,6 +723,38 @@ export function AdminDashboard() {
                               <p className="text-sm text-muted-foreground">{user.companyName}</p>
                             )}
                             
+                            {/* Coverage Information for Operators */}
+                            {user.userType === 'operator' && user.coverage && (
+                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200 max-w-md">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                                  <span className="text-xs font-medium text-blue-900">Coverage</span>
+                                </div>
+                                <div className="text-xs text-blue-800 space-y-0.5">
+                                  <p>
+                                    <span className="font-medium">{normalizeLocationName(user.coverage.baseLocationName)}</span>
+                                    {user.coverage.isGeocoded ? (
+                                      <span className="ml-2 text-green-600">✓ Geocoded</span>
+                                    ) : (
+                                      <span className="ml-2 text-yellow-600">⚠ Not geocoded</span>
+                                    )}
+                                  </p>
+                                  <p>
+                                    Radius: <span className="font-medium">{user.coverage.coverageRadiusKm} km</span> • 
+                                    Capacity: <span className="font-medium">{user.coverage.minPassengerCapacity}-{user.coverage.maxPassengerCapacity}</span> passengers
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {user.userType === 'operator' && !user.coverage && (
+                              <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200 max-w-md">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                                  <span className="text-xs text-gray-500">No coverage configured</span>
+                                </div>
+                              </div>
+                            )}
+                            
                             <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                               <span>{user.externalProvider} auth</span>
                               {user.quoteCount > 0 && (
@@ -566,16 +767,114 @@ export function AdminDashboard() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-start gap-2">
                           {!user.isAdmin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openEditDialog(user)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditDialog(user)}
+                                className="w-28"
+                              >
+                                <Settings className="h-4 w-4 mr-1" />
+                                Attributes
+                              </Button>
+                              {(user.userType === 'operator' || user.isAdmin) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-28"
+                                  onClick={async () => {
+                                    setEditingUser(user);
+                                    setShowCoverageDialog(true);
+                                    setLoadingCoverage(true);
+                                    setIsEditingCoverage(false);
+                                    try {
+                                      const response = await fetch(`${API_BASE_URL}/api/admin/operators/${user.id}/coverage`, {
+                                        credentials: 'include',
+                                      });
+                                      if (response.ok) {
+                                        const coverage = await response.json();
+                                        if (coverage && coverage.id) {
+                                          setExistingCoverage(coverage);
+                                          setCoverageConfig({
+                                            baseLocationName: coverage.baseLocationName,
+                                            coverageRadiusKm: coverage.coverageRadiusKm,
+                                            minPassengerCapacity: coverage.minPassengerCapacity,
+                                            maxPassengerCapacity: coverage.maxPassengerCapacity
+                                          });
+                                        } else {
+                                          setExistingCoverage(null);
+                                          setCoverageConfig({
+                                            baseLocationName: '',
+                                            coverageRadiusKm: 50,
+                                            minPassengerCapacity: 1,
+                                            maxPassengerCapacity: 50
+                                          });
+                                        }
+                                      } else {
+                                        setExistingCoverage(null);
+                                        setCoverageConfig({
+                                          baseLocationName: '',
+                                          coverageRadiusKm: 50,
+                                          minPassengerCapacity: 1,
+                                          maxPassengerCapacity: 50
+                                        });
+                                      }
+                                    } catch (error) {
+                                      console.error('Failed to load coverage:', error);
+                                      setExistingCoverage(null);
+                                      setCoverageConfig({
+                                        baseLocationName: '',
+                                        coverageRadiusKm: 50,
+                                        minPassengerCapacity: 1,
+                                        maxPassengerCapacity: 50
+                                      });
+                                    } finally {
+                                      setLoadingCoverage(false);
+                                    }
+                                  }}
+                                >
+                                  <MapPin className="h-4 w-4 mr-1" />
+                                  Coverage
+                                </Button>
+                              )}
+                              {!user.isAdmin && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-28"
+                                  onClick={async () => {
+                                    if (user.isAdmin) {
+                                      alert('Admin users cannot be deactivated');
+                                      return;
+                                    }
+                                    if (!confirm(`Are you sure you want to ${user.isActive ? 'deactivate' : 'activate'} this user?`)) {
+                                      return;
+                                    }
+                                    try {
+                                      const response = await fetch(`${API_BASE_URL}/api/admin/users/${user.id}/active`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        credentials: 'include',
+                                        body: JSON.stringify({ isActive: !user.isActive }),
+                                      });
+                                      if (response.ok) {
+                                        await loadUsers();
+                                      } else {
+                                        const error = await response.json();
+                                        alert(error.error || 'Failed to update user status');
+                                      }
+                                    } catch (error) {
+                                      console.error('Failed to update user status:', error);
+                                      alert('Failed to update user status');
+                                    }
+                                  }}
+                              >
+                                {user.isActive ? 'Deactivate' : 'Activate'}
+                              </Button>
+                              )}
+                            </>
                           )}
                           <span className={`text-xs px-2 py-1 rounded ${
                             user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
@@ -604,38 +903,252 @@ export function AdminDashboard() {
                 <p className="text-muted-foreground text-center py-8">No requests found</p>
               ) : (
                 <div className="space-y-4">
-                  {requests.map((request) => (
-                    <div key={request.id} className="p-4 border rounded-lg">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-medium">Request #{request.id}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {request.requestData?.trip?.type} • {request.requestData?.trip?.passengerCount} passengers
-                          </p>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          request.status === 'Open' ? 'bg-blue-100 text-blue-800' :
-                          request.status === 'QuotesReceived' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {request.status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        Created {new Date(request.createdAt).toLocaleDateString()} • {request.quoteCount} quote(s)
-                      </p>
-                      {request.quotes.length > 0 && (
-                        <div className="mt-3 pt-3 border-t">
-                          <p className="text-sm font-medium mb-2">Quotes:</p>
-                          {request.quotes.map((quote) => (
-                            <div key={quote.id} className="text-sm text-muted-foreground mb-1">
-                              {quote.providerName}: ${quote.price} {quote.currency} - {quote.status}
+                  {requests.map((request) => {
+                    const showJson = expandedJsonRequests.has(request.id);
+                    const pickup = request.requestData?.trip?.pickupLocation;
+                    const destination = request.requestData?.trip?.destination;
+                    const pickupName = pickup?.resolvedName || pickup?.rawInput || 'N/A';
+                    const destinationName = destination?.resolvedName || destination?.rawInput || 'N/A';
+                    const pickupConfidence = pickup?.confidence || 'low';
+                    const destinationConfidence = destination?.confidence || 'low';
+                    const hasLowConfidence = request.hasLowConfidence || pickupConfidence === 'low' || destinationConfidence === 'low';
+                    const isDraft = request.status === 'Draft' || request.status === 'UnderReview';
+                    const isPublished = request.status === 'Published';
+                    
+                    const toggleJson = () => {
+                      const newSet = new Set(expandedJsonRequests);
+                      if (showJson) {
+                        newSet.delete(request.id);
+                      } else {
+                        newSet.add(request.id);
+                      }
+                      setExpandedJsonRequests(newSet);
+                    };
+
+                    const openEditRequest = () => {
+                      setEditingRequest({
+                        id: request.id,
+                        pickupLocation: {
+                          name: pickupName,
+                          latitude: pickup?.lat,
+                          longitude: pickup?.lng,
+                          confidence: pickupConfidence
+                        },
+                        destination: {
+                          name: destinationName,
+                          latitude: destination?.lat,
+                          longitude: destination?.lng,
+                          confidence: destinationConfidence
+                        }
+                      });
+                    };
+
+                    const handlePublishRequest = async () => {
+                      if (!confirm('Publish this request? Operators will be able to see it and submit quotes.')) {
+                        return;
+                      }
+
+                      setRequestSaving(true);
+                      try {
+                        const response = await fetch(`${API_BASE_URL}/api/admin/requests/${request.id}/publish`, {
+                          method: 'POST',
+                          credentials: 'include',
+                        });
+
+                        if (response.ok) {
+                          alert('Request published successfully!');
+                          await loadRequests();
+                        } else {
+                          const error = await response.json();
+                          alert(error.error || 'Failed to publish request');
+                        }
+                      } catch (error) {
+                        console.error('Failed to publish request:', error);
+                        alert('Failed to publish request');
+                      } finally {
+                        setRequestSaving(false);
+                      }
+                    };
+
+                    const handleWithdrawRequest = async () => {
+                      if (!confirm('Are you sure you want to withdraw this request? This action cannot be undone.')) {
+                        return;
+                      }
+
+                      setRequestSaving(true);
+                      try {
+                        const response = await fetch(`${API_BASE_URL}/api/admin/requests/${request.id}/withdraw`, {
+                          method: 'POST',
+                          credentials: 'include',
+                        });
+
+                        if (response.ok) {
+                          alert('Request withdrawn successfully!');
+                          await loadRequests();
+                        } else {
+                          const error = await response.json();
+                          alert(error.error || 'Failed to withdraw request');
+                        }
+                      } catch (error) {
+                        console.error('Failed to withdraw request:', error);
+                        alert('Failed to withdraw request');
+                      } finally {
+                        setRequestSaving(false);
+                      }
+                    };
+                    
+                    return (
+                      <div 
+                        key={request.id} 
+                        className={`p-4 border rounded-lg ${
+                          hasLowConfidence ? 'border-yellow-400 bg-yellow-50/50' : ''
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-medium">Request #{request.id}</h3>
+                              {hasLowConfidence && (
+                                <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-medium flex items-center gap-1">
+                                  <AlertCircle className="h-3 w-3" />
+                                  Low Confidence
+                                </span>
+                              )}
+                              {isDraft && (
+                                <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-medium">
+                                  Needs Review
+                                </span>
+                              )}
                             </div>
-                          ))}
+                            <div className="mt-2 space-y-1">
+                              {/* Requester Information */}
+                              <div className="mb-2 p-2 rounded border bg-muted/30 max-w-md">
+                                <div className="flex items-center gap-2">
+                                  <User className="h-4 w-4 text-muted-foreground" />
+                                  <div className="flex-1">
+                                    {request.requesterId && (request.requesterName || request.requesterEmail) ? (
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          {request.requesterName || 'Unknown User'}
+                                        </p>
+                                        {request.requesterEmail && (
+                                          <p className="text-xs text-muted-foreground">{request.requesterEmail}</p>
+                                        )}
+                                        <span className="text-xs text-green-600 mt-0.5 inline-block">✓ Authenticated</span>
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <p className="text-sm font-medium text-muted-foreground">Anonymous</p>
+                                        <span className="text-xs text-gray-500 mt-0.5 inline-block">Not logged in</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <p className="text-sm">
+                                <span className="font-medium">From:</span> {pickupName}
+                                {pickupConfidence === 'low' && (
+                                  <span className="text-xs text-yellow-600 ml-2">⚠ Low confidence</span>
+                                )}
+                              </p>
+                              <p className="text-sm">
+                                <span className="font-medium">To:</span> {destinationName}
+                                {destinationConfidence === 'low' && (
+                                  <span className="text-xs text-yellow-600 ml-2">⚠ Low confidence</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-2 items-end">
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              request.status === 'Draft' ? 'bg-gray-100 text-gray-800' :
+                              request.status === 'UnderReview' ? 'bg-blue-100 text-blue-800' :
+                              request.status === 'Published' ? 'bg-green-100 text-green-800' :
+                              request.status === 'QuotesReceived' ? 'bg-yellow-100 text-yellow-800' :
+                              request.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {request.status}
+                            </span>
+                            {isDraft && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={openEditRequest}
+                                className="w-28"
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            )}
+                            {isDraft && (
+                              <Button
+                                size="sm"
+                                onClick={handlePublishRequest}
+                                disabled={requestSaving || !pickup?.lat || !destination?.lat}
+                                className="w-28"
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Publish
+                              </Button>
+                            )}
+                            {request.status !== 'Cancelled' && request.status !== 'Completed' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleWithdrawRequest}
+                                disabled={requestSaving}
+                                className="w-28 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <XCircle className="h-4 w-4 mr-1" />
+                                Withdraw
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
+                          <span>Created {new Date(request.createdAt).toLocaleDateString()}</span>
+                          <span>•</span>
+                          <span>{request.quoteCount} quote(s)</span>
+                          {request.requesterEmail && (
+                            <>
+                              <span>•</span>
+                              <span>{request.requesterEmail}</span>
+                            </>
+                          )}
+                        </div>
+                        {request.rawJsonPayload && (
+                          <div className="mt-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={toggleJson}
+                              className="mb-2"
+                            >
+                              {showJson ? 'Hide' : 'Show'} Raw JSON
+                            </Button>
+                            {showJson && (
+                              <div className="mt-2 p-3 bg-gray-50 rounded border overflow-auto max-h-96">
+                                <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                                  {request.rawJsonPayload}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {request.quotes && request.quotes.length > 0 && (
+                          <div className="mt-3 pt-3 border-t">
+                            <p className="text-sm font-medium mb-2">Quotes:</p>
+                            {request.quotes.map((quote) => (
+                              <div key={quote.id} className="text-sm text-muted-foreground mb-1">
+                                {quote.providerName}: ${quote.price} {quote.currency} - {quote.status}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -644,7 +1157,7 @@ export function AdminDashboard() {
       </div>
 
       {/* Edit User Attributes Dialog */}
-      {editingUser && (
+      {editingUser && !showCoverageDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
@@ -724,6 +1237,305 @@ export function AdminDashboard() {
                   </Button>
                   <Button onClick={handleSaveAttributes} disabled={saving}>
                     {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Configure Operator Coverage Dialog */}
+      {showCoverageDialog && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Configure Operator Coverage</h2>
+                <Button variant="ghost" size="sm" onClick={() => {
+                  setShowCoverageDialog(false);
+                  setEditingUser(null);
+                  setExistingCoverage(null);
+                  setIsEditingCoverage(false);
+                }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium mb-1">{editingUser.name}</p>
+                  <p className="text-sm text-muted-foreground">{editingUser.email}</p>
+                </div>
+
+                {loadingCoverage ? (
+                  <p className="text-muted-foreground text-center py-4">Loading coverage...</p>
+                ) : (
+                  <>
+                    {existingCoverage && !isEditingCoverage && (
+                      <div className="border rounded-lg p-4 bg-muted/30 mb-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h3 className="text-sm font-medium mb-2">Current Coverage</h3>
+                            <p className="font-medium text-sm">{normalizeLocationName(existingCoverage.baseLocationName)}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Radius: {existingCoverage.coverageRadiusKm} km • Capacity: {existingCoverage.minPassengerCapacity}-{existingCoverage.maxPassengerCapacity} passengers
+                            </p>
+                            {existingCoverage.isGeocoded && existingCoverage.latitude && existingCoverage.longitude ? (
+                              <p className="text-xs text-green-600 mt-1">✓ Location geocoded</p>
+                            ) : (
+                              <p className="text-xs text-yellow-600 mt-1">⚠ Location not geocoded</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setIsEditingCoverage(true)}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleDeleteCoverage}
+                              disabled={coverageSaving}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                        {existingCoverage.isGeocoded && existingCoverage.latitude && existingCoverage.longitude && (
+                          <div className="mt-3">
+                            <CoverageMap
+                              latitude={existingCoverage.latitude}
+                              longitude={existingCoverage.longitude}
+                              radiusKm={existingCoverage.coverageRadiusKm}
+                              locationName={normalizeLocationName(existingCoverage.baseLocationName)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(isEditingCoverage || !existingCoverage) && (
+                      <div className="border-t pt-4 space-y-4">
+                        <h3 className="text-sm font-medium">{existingCoverage ? 'Edit Coverage Location' : 'Add Coverage Location'}</h3>
+                      
+                      <div>
+                        <Label htmlFor="baseLocation" className="text-sm font-medium mb-2 block">
+                          Base Location <span className="text-muted-foreground">(e.g., "Sydney, NSW" or "123 Main St, Melbourne")</span>
+                        </Label>
+                        <Input
+                          id="baseLocation"
+                          value={coverageConfig.baseLocationName}
+                          onChange={(e) => setCoverageConfig({ ...coverageConfig, baseLocationName: e.target.value })}
+                          placeholder="Enter location name"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          We'll automatically find the coordinates for this location.
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="coverageRadius" className="text-sm font-medium mb-2 block">
+                          Coverage Radius (km)
+                        </Label>
+                        <Input
+                          id="coverageRadius"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={coverageConfig.coverageRadiusKm}
+                          onChange={(e) => setCoverageConfig({ ...coverageConfig, coverageRadiusKm: parseFloat(e.target.value) || 0 })}
+                          placeholder="50"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="minCapacity" className="text-sm font-medium mb-2 block">
+                            Min Passengers
+                          </Label>
+                          <Input
+                            id="minCapacity"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={coverageConfig.minPassengerCapacity}
+                            onChange={(e) => setCoverageConfig({ ...coverageConfig, minPassengerCapacity: parseInt(e.target.value) || 1 })}
+                            placeholder="1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="maxCapacity" className="text-sm font-medium mb-2 block">
+                            Max Passengers
+                          </Label>
+                          <Input
+                            id="maxCapacity"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={coverageConfig.maxPassengerCapacity}
+                            onChange={(e) => setCoverageConfig({ ...coverageConfig, maxPassengerCapacity: parseInt(e.target.value) || 1 })}
+                            placeholder="50"
+                          />
+                        </div>
+                      </div>
+
+                        <div className="flex justify-end gap-2 pt-4 border-t">
+                          {isEditingCoverage && (
+                            <Button variant="outline" onClick={() => {
+                              setIsEditingCoverage(false);
+                              // Reset to existing values
+                              if (existingCoverage) {
+                                setCoverageConfig({
+                                  baseLocationName: existingCoverage.baseLocationName,
+                                  coverageRadiusKm: existingCoverage.coverageRadiusKm,
+                                  minPassengerCapacity: existingCoverage.minPassengerCapacity,
+                                  maxPassengerCapacity: existingCoverage.maxPassengerCapacity
+                                });
+                              }
+                            }} disabled={coverageSaving}>
+                              Cancel
+                            </Button>
+                          )}
+                          <Button variant="outline" onClick={() => {
+                            setShowCoverageDialog(false);
+                            setEditingUser(null);
+                            setExistingCoverage(null);
+                            setIsEditingCoverage(false);
+                          }} disabled={coverageSaving}>
+                            {isEditingCoverage ? 'Close' : 'Close'}
+                          </Button>
+                          <Button onClick={handleSaveCoverage} disabled={coverageSaving || !coverageConfig.baseLocationName.trim()}>
+                            {coverageSaving ? 'Saving...' : existingCoverage && isEditingCoverage ? 'Update Coverage' : 'Add Coverage'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Request Locations Dialog */}
+      {editingRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-lg shadow-lg w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Edit Request Locations</h2>
+                <Button variant="ghost" size="sm" onClick={() => setEditingRequest(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-medium mb-4">Request #{editingRequest.id}</h3>
+                </div>
+
+                <LocationEditor
+                  label="Pickup Location"
+                  locationName={editingRequest.pickupLocation.name}
+                  latitude={editingRequest.pickupLocation.latitude}
+                  longitude={editingRequest.pickupLocation.longitude}
+                  isGeocoded={!!(editingRequest.pickupLocation.latitude && editingRequest.pickupLocation.longitude)}
+                  onLocationChange={(name) => {
+                    setEditingRequest({
+                      ...editingRequest,
+                      pickupLocation: { ...editingRequest.pickupLocation, name }
+                    });
+                  }}
+                  onGeocodeResult={(lat, lng) => {
+                    setEditingRequest({
+                      ...editingRequest,
+                      pickupLocation: { ...editingRequest.pickupLocation, latitude: lat, longitude: lng, confidence: 'high' }
+                    });
+                  }}
+                  placeholder="Enter pickup location (e.g., 'Sydney, NSW')"
+                />
+
+                <LocationEditor
+                  label="Destination"
+                  locationName={editingRequest.destination.name}
+                  latitude={editingRequest.destination.latitude}
+                  longitude={editingRequest.destination.longitude}
+                  isGeocoded={!!(editingRequest.destination.latitude && editingRequest.destination.longitude)}
+                  onLocationChange={(name) => {
+                    setEditingRequest({
+                      ...editingRequest,
+                      destination: { ...editingRequest.destination, name }
+                    });
+                  }}
+                  onGeocodeResult={(lat, lng) => {
+                    setEditingRequest({
+                      ...editingRequest,
+                      destination: { ...editingRequest.destination, latitude: lat, longitude: lng, confidence: 'high' }
+                    });
+                  }}
+                  placeholder="Enter destination (e.g., 'Melbourne, VIC')"
+                />
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setEditingRequest(null)} disabled={requestSaving}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={async () => {
+                      if (!editingRequest) return;
+                      setRequestSaving(true);
+                      try {
+                        // Save pickup location
+                        const pickupResponse = await fetch(`${API_BASE_URL}/api/admin/requests/${editingRequest.id}/location`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({
+                            locationType: 'pickup',
+                            locationName: editingRequest.pickupLocation.name,
+                            latitude: editingRequest.pickupLocation.latitude,
+                            longitude: editingRequest.pickupLocation.longitude
+                          }),
+                        });
+
+                        // Save destination
+                        const destResponse = await fetch(`${API_BASE_URL}/api/admin/requests/${editingRequest.id}/location`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({
+                            locationType: 'destination',
+                            locationName: editingRequest.destination.name,
+                            latitude: editingRequest.destination.latitude,
+                            longitude: editingRequest.destination.longitude
+                          }),
+                        });
+
+                        if (pickupResponse.ok && destResponse.ok) {
+                          alert('Locations updated successfully!');
+                          setEditingRequest(null);
+                          await loadRequests();
+                        } else {
+                          const error = await (pickupResponse.ok ? destResponse : pickupResponse).json();
+                          alert(error.error || 'Failed to update locations');
+                        }
+                      } catch (error) {
+                        console.error('Failed to update locations:', error);
+                        alert('Failed to update locations');
+                      } finally {
+                        setRequestSaving(false);
+                      }
+                    }}
+                    disabled={requestSaving}
+                  >
+                    {requestSaving ? 'Saving...' : 'Save Locations'}
                   </Button>
                 </div>
               </div>

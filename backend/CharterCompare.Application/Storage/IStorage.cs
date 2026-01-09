@@ -43,4 +43,11 @@ public interface IStorage
 
     // Save changes
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    
+    // OperatorCoverage operations
+    Task<OperatorCoverage?> GetOperatorCoverageByIdAsync(int coverageId, CancellationToken cancellationToken = default);
+    Task<List<OperatorCoverage>> GetOperatorCoveragesByOperatorIdAsync(int operatorId, CancellationToken cancellationToken = default);
+    Task<OperatorCoverage> CreateOperatorCoverageAsync(OperatorCoverage coverage, CancellationToken cancellationToken = default);
+    Task UpdateOperatorCoverageAsync(OperatorCoverage coverage, CancellationToken cancellationToken = default);
+    Task DeleteOperatorCoverageAsync(int coverageId, CancellationToken cancellationToken = default);
 }

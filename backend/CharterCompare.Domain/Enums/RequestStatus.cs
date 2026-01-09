@@ -2,8 +2,10 @@ namespace CharterCompare.Domain.Enums;
 
 public enum RequestStatus
 {
-    Open,
-    QuotesReceived,
+    Draft,           // Initial state - needs admin review
+    UnderReview,     // Admin is reviewing
+    Published,       // Published and operators can see it
+    QuotesReceived,  // Quotes have been received
     Accepted,
     Completed,
     Cancelled

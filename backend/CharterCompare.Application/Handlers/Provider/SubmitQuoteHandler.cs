@@ -37,7 +37,7 @@ public class SubmitQuoteHandler : IRequestHandler<SubmitQuoteCommand, SubmitQuot
 
         // Get request and verify it's Open
         var charterRequest = await _storage.GetCharterRequestByIdAsync(request.RequestId, cancellationToken);
-        if (charterRequest == null || charterRequest.Status != RequestStatus.Open)
+        if (charterRequest == null || charterRequest.Status != RequestStatus.Published)
         {
             return new SubmitQuoteResponse
             {
