@@ -84,7 +84,9 @@ To modify CORS settings, edit `Program.cs` or `appsettings.json`.
 
 ### JSON File Storage
 
-When a chat request is completed, the JSON payload is automatically written to a file in the `requests/` directory (created automatically in the project root).
+When a chat request is completed, the JSON payload is:
+1. Saved to the SQLite database (`chartercompare.db`)
+2. Also written to a file in the `requests/` directory (backup)
 
 **File naming format:**
 ```
@@ -98,7 +100,16 @@ charter-request_20260108_143022_user_at_example_com.json
 
 Files are stored in: `backend/CharterCompare.Api/requests/`
 
-**Note:** The `requests/` directory is excluded from git via `.gitignore` to prevent committing sensitive customer data.
+**Note:** The `requests/` directory and database file are excluded from git via `.gitignore` to prevent committing sensitive customer data.
+
+### Provider Portal
+
+The API includes a provider portal where service providers can:
+- Sign in with Google OAuth
+- View open charter requests
+- Submit quotes for requests
+
+See `PROVIDER_SETUP.md` for detailed setup instructions.
 
 ### Session Storage
 

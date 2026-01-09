@@ -45,7 +45,9 @@ export function ChatWidget() {
       console.error('Failed to start chat:', error);
       const errorMessage: ChatMessage = {
         id: `msg-${Date.now()}-error`,
-        text: "Sorry, I'm having trouble connecting. Please check if the API server is running.",
+        text: error instanceof Error 
+          ? `Connection error: ${error.message}` 
+          : "Sorry, I'm having trouble connecting. Please check if the API server is running at http://localhost:5000",
         sender: 'bot',
         timestamp: new Date(),
         icon: 'AlertCircle',

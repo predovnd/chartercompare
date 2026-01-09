@@ -18,7 +18,7 @@ export function Sidebar() {
           </li>
           <li className="flex gap-3">
             <span className="font-semibold text-foreground">2.</span>
-            <span>Providers will send you quotes</span>
+            <span>Operators will send you quotes</span>
           </li>
           <li className="flex gap-3">
             <span className="font-semibold text-foreground">3.</span>

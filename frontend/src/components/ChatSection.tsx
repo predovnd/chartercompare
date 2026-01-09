@@ -9,7 +9,7 @@ export function ChatSection() {
           <span className="text-primary">in minutes, not days.</span>
         </h1>
         <p className="text-lg text-muted-foreground">
-          Chat with our AI to get instant comparisons from top charter providers.
+          Chat with our AI to get instant comparisons from top charter operators.
         </p>
       </div>
       <div className="max-w-3xl">
