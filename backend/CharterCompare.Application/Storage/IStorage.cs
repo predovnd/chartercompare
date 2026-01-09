@@ -1,24 +1,30 @@
 using CharterCompare.Domain.Entities;
+using CharterCompare.Domain.Enums;
 
 namespace CharterCompare.Application.Storage;
 
 public interface IStorage
 {
-    // Operator operations
-    Task<Operator?> GetOperatorByIdAsync(int operatorId, CancellationToken cancellationToken = default);
-    Task<Operator?> GetOperatorByEmailAsync(string email, CancellationToken cancellationToken = default);
-    Task<Operator?> GetOperatorByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default);
-    Task<Operator> CreateOperatorAsync(Operator operatorEntity, CancellationToken cancellationToken = default);
-    Task UpdateOperatorAsync(Operator operatorEntity, CancellationToken cancellationToken = default);
-    Task<List<Operator>> GetAllOperatorsAsync(CancellationToken cancellationToken = default);
-
-    // Requester operations
-    Task<Requester?> GetRequesterByIdAsync(int requesterId, CancellationToken cancellationToken = default);
-    Task<Requester?> GetRequesterByEmailAsync(string email, CancellationToken cancellationToken = default);
-    Task<Requester?> GetRequesterByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default);
-    Task<Requester> CreateRequesterAsync(Requester requester, CancellationToken cancellationToken = default);
-    Task UpdateRequesterAsync(Requester requester, CancellationToken cancellationToken = default);
-    Task<List<Requester>> GetAllRequestersAsync(CancellationToken cancellationToken = default);
+    // User operations
+    Task<User?> GetUserByIdAsync(int userId, CancellationToken cancellationToken = default);
+    Task<User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default);
+    Task<User?> GetUserByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default);
+    Task<User> CreateUserAsync(User user, CancellationToken cancellationToken = default);
+    Task UpdateUserAsync(User user, CancellationToken cancellationToken = default);
+    Task<List<User>> GetAllUsersAsync(CancellationToken cancellationToken = default);
+    Task<List<User>> GetUsersByRoleAsync(UserRole role, CancellationToken cancellationToken = default);
+    
+    // UserAttribute operations
+    Task<List<UserAttribute>> GetUserAttributesAsync(int userId, CancellationToken cancellationToken = default);
+    Task AddUserAttributeAsync(int userId, UserAttributeType attributeType, CancellationToken cancellationToken = default);
+    Task RemoveUserAttributeAsync(int userId, UserAttributeType attributeType, CancellationToken cancellationToken = default);
+    Task SetUserAttributesAsync(int userId, List<UserAttributeType> attributeTypes, CancellationToken cancellationToken = default);
+    
+    // Convenience methods for backward compatibility
+    Task<User?> GetOperatorByIdAsync(int operatorId, CancellationToken cancellationToken = default);
+    Task<User?> GetOperatorByEmailAsync(string email, CancellationToken cancellationToken = default);
+    Task<User?> GetRequesterByIdAsync(int requesterId, CancellationToken cancellationToken = default);
+    Task<User?> GetRequesterByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     // CharterRequestRecord operations
     Task<CharterRequestRecord?> GetCharterRequestByIdAsync(int requestId, CancellationToken cancellationToken = default);

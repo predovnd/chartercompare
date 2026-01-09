@@ -18,92 +18,101 @@ public class SqlStorage : IStorage
         _logger = logger;
     }
 
-    // Operator operations
-    public async Task<Operator?> GetOperatorByIdAsync(int operatorId, CancellationToken cancellationToken = default)
+    // User operations
+    public async Task<User?> GetUserByIdAsync(int userId, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Providers
-            .Include(o => o.Quotes)
-            .FirstOrDefaultAsync(o => o.Id == operatorId, cancellationToken);
+        return await _dbContext.Users
+            .Include(u => u.Quotes)
+            .Include(u => u.Requests)
+            .Include(u => u.Attributes)
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
     }
 
-    public async Task<Operator?> GetOperatorByEmailAsync(string email, CancellationToken cancellationToken = default)
+    public async Task<User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Providers
-            .FirstOrDefaultAsync(o => o.Email == email, cancellationToken);
+        return await _dbContext.Users
+            .Include(u => u.Attributes)
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
     }
 
-    public async Task<Operator?> GetOperatorByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default)
+    public async Task<User?> GetUserByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default)
     {
-        if (provider == "Internal" && int.TryParse(externalId, out var operatorId))
+        if (provider == "Internal" && int.TryParse(externalId, out var userId))
         {
-            return await _dbContext.Providers.FindAsync(new object[] { operatorId }, cancellationToken);
+            return await _dbContext.Users
+                .Include(u => u.Attributes)
+                .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         }
-        return await _dbContext.Providers
-            .FirstOrDefaultAsync(o => o.ExternalId == externalId && o.ExternalProvider == provider, cancellationToken);
+        return await _dbContext.Users
+            .Include(u => u.Attributes)
+            .FirstOrDefaultAsync(u => u.ExternalId == externalId && u.ExternalProvider == provider, cancellationToken);
     }
 
-    public async Task<Operator> CreateOperatorAsync(Operator operatorEntity, CancellationToken cancellationToken = default)
+    public async Task<User> CreateUserAsync(User user, CancellationToken cancellationToken = default)
     {
-        _dbContext.Providers.Add(operatorEntity);
+        _dbContext.Users.Add(user);
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return operatorEntity;
+        return user;
     }
 
-    public async Task UpdateOperatorAsync(Operator operatorEntity, CancellationToken cancellationToken = default)
+    public async Task UpdateUserAsync(User user, CancellationToken cancellationToken = default)
     {
-        _dbContext.Providers.Update(operatorEntity);
+        _dbContext.Users.Update(user);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<List<Operator>> GetAllOperatorsAsync(CancellationToken cancellationToken = default)
+    public async Task<List<User>> GetAllUsersAsync(CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Providers
-            .Include(o => o.Quotes)
+        return await _dbContext.Users
+            .Include(u => u.Quotes)
+            .Include(u => u.Requests)
+            .Include(u => u.Attributes)
             .ToListAsync(cancellationToken);
     }
 
-    // Requester operations
-    public async Task<Requester?> GetRequesterByIdAsync(int requesterId, CancellationToken cancellationToken = default)
+    public async Task<List<User>> GetUsersByRoleAsync(UserRole role, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Requesters
-            .Include(r => r.Requests)
-            .FirstOrDefaultAsync(r => r.Id == requesterId, cancellationToken);
-    }
-
-    public async Task<Requester?> GetRequesterByEmailAsync(string email, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.Requesters
-            .FirstOrDefaultAsync(r => r.Email == email, cancellationToken);
-    }
-
-    public async Task<Requester?> GetRequesterByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default)
-    {
-        if (provider == "Internal" && int.TryParse(externalId, out var requesterId))
-        {
-            return await _dbContext.Requesters.FindAsync(new object[] { requesterId }, cancellationToken);
-        }
-        return await _dbContext.Requesters
-            .FirstOrDefaultAsync(r => r.ExternalId == externalId && r.ExternalProvider == provider, cancellationToken);
-    }
-
-    public async Task<Requester> CreateRequesterAsync(Requester requester, CancellationToken cancellationToken = default)
-    {
-        _dbContext.Requesters.Add(requester);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return requester;
-    }
-
-    public async Task UpdateRequesterAsync(Requester requester, CancellationToken cancellationToken = default)
-    {
-        _dbContext.Requesters.Update(requester);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task<List<Requester>> GetAllRequestersAsync(CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.Requesters
-            .Include(r => r.Requests)
+        return await _dbContext.Users
+            .Include(u => u.Quotes)
+            .Include(u => u.Requests)
+            .Include(u => u.Attributes)
+            .Where(u => u.Role == role)
             .ToListAsync(cancellationToken);
+    }
+
+    // Convenience methods for backward compatibility
+    public async Task<User?> GetOperatorByIdAsync(int operatorId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .Include(u => u.Quotes)
+            .Include(u => u.Attributes)
+            .Where(u => u.Id == operatorId && (u.Role == UserRole.Operator || u.Role == UserRole.Admin))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<User?> GetOperatorByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .Include(u => u.Attributes)
+            .Where(u => u.Email == email && (u.Role == UserRole.Operator || u.Role == UserRole.Admin))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<User?> GetRequesterByIdAsync(int requesterId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .Include(u => u.Requests)
+            .Include(u => u.Attributes)
+            .Where(u => u.Id == requesterId && u.Role == UserRole.Requester)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<User?> GetRequesterByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .Include(u => u.Attributes)
+            .Where(u => u.Email == email && u.Role == UserRole.Requester)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     // CharterRequestRecord operations
@@ -195,6 +204,78 @@ public class SqlStorage : IStorage
             .Where(q => q.ProviderId == providerId)
             .OrderByDescending(q => q.CreatedAt)
             .ToListAsync(cancellationToken);
+    }
+
+    // UserAttribute operations
+    public async Task<List<UserAttribute>> GetUserAttributesAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.UserAttributes
+            .Where(a => a.UserId == userId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddUserAttributeAsync(int userId, UserAttributeType attributeType, CancellationToken cancellationToken = default)
+    {
+        // Check if attribute already exists
+        var exists = await _dbContext.UserAttributes
+            .AnyAsync(a => a.UserId == userId && a.AttributeType == attributeType, cancellationToken);
+        
+        if (!exists)
+        {
+            var attribute = new UserAttribute
+            {
+                UserId = userId,
+                AttributeType = attributeType,
+                CreatedAt = DateTime.UtcNow
+            };
+            _dbContext.UserAttributes.Add(attribute);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task RemoveUserAttributeAsync(int userId, UserAttributeType attributeType, CancellationToken cancellationToken = default)
+    {
+        var attribute = await _dbContext.UserAttributes
+            .FirstOrDefaultAsync(a => a.UserId == userId && a.AttributeType == attributeType, cancellationToken);
+        
+        if (attribute != null)
+        {
+            _dbContext.UserAttributes.Remove(attribute);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task SetUserAttributesAsync(int userId, List<UserAttributeType> attributeTypes, CancellationToken cancellationToken = default)
+    {
+        // Get existing attributes
+        var existingAttributes = await _dbContext.UserAttributes
+            .Where(a => a.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        // Remove attributes that are not in the new list
+        var attributesToRemove = existingAttributes
+            .Where(a => !attributeTypes.Contains(a.AttributeType))
+            .ToList();
+        
+        foreach (var attr in attributesToRemove)
+        {
+            _dbContext.UserAttributes.Remove(attr);
+        }
+
+        // Add new attributes that don't exist
+        var existingTypes = existingAttributes.Select(a => a.AttributeType).ToList();
+        var attributesToAdd = attributeTypes
+            .Where(t => !existingTypes.Contains(t))
+            .Select(t => new UserAttribute
+            {
+                UserId = userId,
+                AttributeType = t,
+                CreatedAt = DateTime.UtcNow
+            })
+            .ToList();
+
+        _dbContext.UserAttributes.AddRange(attributesToAdd);
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     // Save changes

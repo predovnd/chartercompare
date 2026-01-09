@@ -2,6 +2,7 @@ using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Auth;
 using CharterCompare.Application.Storage;
 using CharterCompare.Domain.Entities;
+using CharterCompare.Domain.Enums;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 
@@ -21,8 +22,8 @@ public class CreateAdminHandler : IRequestHandler<CreateAdminCommand, CreateAdmi
     public async Task<CreateAdminResponse> Handle(CreateAdminCommand request, CancellationToken cancellationToken)
     {
         // Check if any admin already exists
-        var allOperators = await _storage.GetAllOperatorsAsync(cancellationToken);
-        var existingAdmin = allOperators.FirstOrDefault(o => o.IsAdmin);
+        var allUsers = await _storage.GetAllUsersAsync(cancellationToken);
+        var existingAdmin = allUsers.FirstOrDefault(u => u.Role == UserRole.Admin);
         
         if (existingAdmin != null)
         {
@@ -42,14 +43,14 @@ public class CreateAdminHandler : IRequestHandler<CreateAdminCommand, CreateAdmi
             };
         }
 
-        // Check if operator already exists
-        var existingOperator = await _storage.GetOperatorByEmailAsync(request.Email, cancellationToken);
+        // Check if user already exists
+        var existingUser = await _storage.GetUserByEmailAsync(request.Email, cancellationToken);
         
-        Operator admin;
-        if (existingOperator != null)
+        User admin;
+        if (existingUser != null)
         {
             // If user exists, promote them to admin
-            admin = existingOperator;
+            admin = existingUser;
             
             // Update password if provided
             if (!string.IsNullOrEmpty(request.Password))
@@ -83,7 +84,7 @@ public class CreateAdminHandler : IRequestHandler<CreateAdminCommand, CreateAdmi
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
             // Create admin
-            admin = new Operator
+            admin = new User
             {
                 Email = request.Email,
                 Name = request.Name,
@@ -91,16 +92,17 @@ public class CreateAdminHandler : IRequestHandler<CreateAdminCommand, CreateAdmi
                 ExternalId = Guid.NewGuid().ToString(),
                 ExternalProvider = "Email",
                 PasswordHash = passwordHash,
+                Role = UserRole.Admin,
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
 
-            await _storage.CreateOperatorAsync(admin, cancellationToken);
+            await _storage.CreateUserAsync(admin, cancellationToken);
         }
 
-        // Set as admin
-        admin.IsAdmin = true;
-        await _storage.UpdateOperatorAsync(admin, cancellationToken);
+        // Set as admin (update role)
+        admin.Role = UserRole.Admin;
+        await _storage.UpdateUserAsync(admin, cancellationToken);
         await _storage.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Admin created: {Email}", request.Email);

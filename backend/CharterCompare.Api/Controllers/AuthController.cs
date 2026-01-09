@@ -152,7 +152,8 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, response.Operator!.Id.ToString()),
             new Claim(ClaimTypes.Email, response.Operator.Email),
             new Claim(ClaimTypes.Name, response.Operator.Name),
-            new Claim("ProviderId", response.Operator.Id.ToString())
+            new Claim("UserId", response.Operator.Id.ToString()),
+            new Claim("ProviderId", response.Operator.Id.ToString()) // Legacy claim for backward compatibility
         };
 
         if (response.Operator.IsAdmin)
@@ -240,7 +241,8 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, response.Operator.Id.ToString()),
             new Claim(ClaimTypes.Email, response.Operator.Email),
             new Claim(ClaimTypes.Name, response.Operator.Name),
-            new Claim("ProviderId", response.Operator.Id.ToString()),
+            new Claim("UserId", response.Operator.Id.ToString()),
+            new Claim("ProviderId", response.Operator.Id.ToString()), // Legacy claim for backward compatibility
             new Claim("IsAdmin", "true")
         };
 
@@ -272,6 +274,8 @@ public class AuthController : ControllerBase
     [HttpPost("requester/register")]
     public async Task<IActionResult> RequesterRegister([FromBody] RequesterRegisterRequest request)
     {
+        // RequesterType is always Individual for new registrations
+        // Only admins can change it to Business
         var command = new RequesterRegisterCommand
         {
             Email = request.Email,
@@ -293,7 +297,8 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, response.Requester!.Id.ToString()),
             new Claim(ClaimTypes.Email, response.Requester.Email),
             new Claim(ClaimTypes.Name, response.Requester.Name),
-            new Claim("RequesterId", response.Requester.Id.ToString())
+            new Claim("UserId", response.Requester.Id.ToString()),
+            new Claim("RequesterId", response.Requester.Id.ToString()) // Legacy claim for backward compatibility
         };
 
         var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -340,7 +345,8 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, response.Requester!.Id.ToString()),
             new Claim(ClaimTypes.Email, response.Requester.Email),
             new Claim(ClaimTypes.Name, response.Requester.Name),
-            new Claim("RequesterId", response.Requester.Id.ToString())
+            new Claim("UserId", response.Requester.Id.ToString()),
+            new Claim("RequesterId", response.Requester.Id.ToString()) // Legacy claim for backward compatibility
         };
 
         var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -395,6 +401,8 @@ public class RequesterRegisterRequest
     public string Password { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Phone { get; set; }
+    // Note: RequesterType is always Individual for new registrations
+    // Only admins can change it to Business via admin endpoint
 }
 
 public class CreateAdminRequest
@@ -411,6 +419,7 @@ public class RegisterRequest
     public string Password { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? CompanyName { get; set; }
+    // Note: Attributes default to Bus for operators (only admin can change)
 }
 
 public class LoginRequest

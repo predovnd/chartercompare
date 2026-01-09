@@ -8,7 +8,7 @@ public class Quote
     public int CharterRequestId { get; set; }
     public CharterRequestRecord CharterRequest { get; set; } = null!;
     public int ProviderId { get; set; }
-    public Operator Provider { get; set; } = null!;
+    public User Provider { get; set; } = null!;
     public decimal Price { get; set; }
     public string Currency { get; set; } = "AUD";
     public string? Notes { get; set; }

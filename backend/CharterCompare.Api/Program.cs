@@ -3,10 +3,12 @@ using CharterCompare.Application.Storage;
 using CharterCompare.Infrastructure.Data;
 using CharterCompare.Infrastructure.Storage;
 using CharterCompare.Domain.Entities;
+using CharterCompare.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using System.Security.Claims;
+using UserAttributeType = CharterCompare.Domain.Enums.UserAttributeType;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +27,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Register Storage (Infrastructure)
 builder.Services.AddScoped<IStorage, SqlStorage>();
 
+// Register Database Migrator (Infrastructure)
+builder.Services.AddScoped<CharterCompare.Infrastructure.Migrations.IDatabaseMigrator, CharterCompare.Infrastructure.Migrations.SqlServerDatabaseMigrator>();
+
 // Register MediatR
 builder.Services.AddScoped<IMediator, SimpleMediator>();
 
@@ -41,6 +46,7 @@ builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<Ch
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminStatsQuery, CharterCompare.Application.Requests.Admin.GetAdminStatsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminStatsHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminUsersQuery, CharterCompare.Application.Requests.Admin.GetAdminUsersResponse>, CharterCompare.Application.Handlers.Admin.GetAdminUsersHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminRequestsQuery, CharterCompare.Application.Requests.Admin.GetAdminRequestsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminRequestsHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.UpdateUserAttributesCommand, CharterCompare.Application.Requests.Admin.UpdateUserAttributesResponse>, CharterCompare.Application.Handlers.Admin.UpdateUserAttributesHandler>();
 
 // Register legacy services (ChatService still uses old models)
 builder.Services.AddScoped<CharterCompare.Api.Services.IChatService, CharterCompare.Api.Services.ChatService>();
@@ -119,41 +125,46 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
                 
                 var isRequester = context.Properties.Items.TryGetValue("userType", out var userTypeValue) && userTypeValue == "requester";
                 
+                var user = await storage.GetUserByExternalIdAsync(externalId, "Google");
+                
                 if (isRequester)
                 {
-                    var requester = await storage.GetRequesterByExternalIdAsync(externalId, "Google");
-                    if (requester == null)
+                    if (user == null)
                     {
-                        requester = new Requester
+                        user = new User
                         {
                             Email = email,
                             Name = name ?? email,
                             ExternalId = externalId,
                             ExternalProvider = "Google",
+                            Role = UserRole.Requester,
                             CreatedAt = DateTime.UtcNow,
                             IsActive = true
                         };
-                        await storage.CreateRequesterAsync(requester);
-                        logger.LogInformation("Created new requester: {RequesterId}", requester.Id);
+                        await storage.CreateUserAsync(user);
+                        // Set default attribute: Individual for requesters
+                        await storage.AddUserAttributeAsync(user.Id, UserAttributeType.Individual);
+                        logger.LogInformation("Created new requester: {UserId}", user.Id);
                     }
                     else
                     {
-                        requester.LastLoginAt = DateTime.UtcNow;
-                        if (!string.IsNullOrEmpty(name) && requester.Name != name)
+                        user.LastLoginAt = DateTime.UtcNow;
+                        if (!string.IsNullOrEmpty(name) && user.Name != name)
                         {
-                            requester.Name = name;
+                            user.Name = name;
                         }
-                        await storage.UpdateRequesterAsync(requester);
+                        await storage.UpdateUserAsync(user);
                         await storage.SaveChangesAsync();
-                        logger.LogInformation("Updated existing requester: {RequesterId}", requester.Id);
+                        logger.LogInformation("Updated existing requester: {UserId}", user.Id);
                     }
 
                     var sessionClaims = new List<Claim>
                     {
-                        new Claim(ClaimTypes.NameIdentifier, requester.Id.ToString()),
-                        new Claim(ClaimTypes.Email, requester.Email),
-                        new Claim(ClaimTypes.Name, requester.Name),
-                        new Claim("RequesterId", requester.Id.ToString())
+                        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                        new Claim(ClaimTypes.Email, user.Email),
+                        new Claim(ClaimTypes.Name, user.Name),
+                        new Claim("UserId", user.Id.ToString()),
+                        new Claim("RequesterId", user.Id.ToString()) // Legacy claim for backward compatibility
                     };
 
                     var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -162,39 +173,43 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
                 }
                 else
                 {
-                    var operatorEntity = await storage.GetOperatorByExternalIdAsync(externalId, "Google");
-                    if (operatorEntity == null)
+                    if (user == null)
                     {
-                        operatorEntity = new Operator
+                        user = new User
                         {
                             Email = email,
                             Name = name ?? email,
                             ExternalId = externalId,
                             ExternalProvider = "Google",
+                            Role = UserRole.Operator,
                             CreatedAt = DateTime.UtcNow,
                             IsActive = true
                         };
-                        await storage.CreateOperatorAsync(operatorEntity);
-                        logger.LogInformation("Created new operator: {OperatorId}", operatorEntity.Id);
+                        await storage.CreateUserAsync(user);
+                        // Set default attribute: Bus for operators
+                        await storage.AddUserAttributeAsync(user.Id, UserAttributeType.Bus);
+                        logger.LogInformation("Created new operator: {UserId}", user.Id);
                     }
                     else
                     {
-                        operatorEntity.LastLoginAt = DateTime.UtcNow;
-                        if (!string.IsNullOrEmpty(name) && operatorEntity.Name != name)
+                        user.LastLoginAt = DateTime.UtcNow;
+                        if (!string.IsNullOrEmpty(name) && user.Name != name)
                         {
-                            operatorEntity.Name = name;
+                            user.Name = name;
                         }
-                        await storage.UpdateOperatorAsync(operatorEntity);
+                        await storage.UpdateUserAsync(user);
                         await storage.SaveChangesAsync();
-                        logger.LogInformation("Updated existing operator: {OperatorId}", operatorEntity.Id);
+                        logger.LogInformation("Updated existing operator: {UserId}", user.Id);
                     }
 
                     var sessionClaims = new List<Claim>
                     {
-                        new Claim(ClaimTypes.NameIdentifier, operatorEntity.Id.ToString()),
-                        new Claim(ClaimTypes.Email, operatorEntity.Email),
-                        new Claim(ClaimTypes.Name, operatorEntity.Name),
-                        new Claim("ProviderId", operatorEntity.Id.ToString())
+                        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                        new Claim(ClaimTypes.Email, user.Email),
+                        new Claim(ClaimTypes.Name, user.Name),
+                        new Claim("UserId", user.Id.ToString()),
+                        new Claim("ProviderId", user.Id.ToString()), // Legacy claim for backward compatibility
+                        new Claim("IsAdmin", user.IsAdmin.ToString())
                     };
 
                     var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -213,123 +228,26 @@ var app = builder.Build();
 // Ensure database is created and migrated
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var migrator = scope.ServiceProvider.GetRequiredService<CharterCompare.Infrastructure.Migrations.IDatabaseMigrator>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
     try
     {
-        // For SQL Server, use EnsureCreated() which will create the schema based on DbContext
-        // In production, you should use EF Core Migrations instead
-        if (!dbContext.Database.CanConnect())
-        {
-            logger.LogInformation("Database does not exist. Creating database...");
-            dbContext.Database.EnsureCreated();
-            logger.LogInformation("Database created successfully.");
-        }
-        else
-        {
-            // Check if tables exist, if not, create them
-            var tablesExist = false;
-            try
-            {
-                // Try to query a table to see if schema exists
-                dbContext.Database.ExecuteSqlRaw("SELECT TOP 1 Id FROM Providers");
-                tablesExist = true;
-            }
-            catch
-            {
-                tablesExist = false;
-            }
-
-            if (!tablesExist)
-            {
-                logger.LogInformation("Database exists but tables are missing. Creating schema...");
-                dbContext.Database.EnsureCreated();
-                logger.LogInformation("Database schema created successfully.");
-            }
-            else
-            {
-                // Check and add missing columns if needed (for existing databases)
-                try
-                {
-                    var hasPasswordHash = false;
-                    try
-                    {
-                        dbContext.Database.ExecuteSqlRaw("SELECT PasswordHash FROM Providers WHERE 1=0");
-                        hasPasswordHash = true;
-                    }
-                    catch { hasPasswordHash = false; }
-
-                    if (!hasPasswordHash)
-                    {
-                        logger.LogWarning("Adding PasswordHash column to Providers table...");
-                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD PasswordHash NVARCHAR(MAX) NULL;");
-                        logger.LogInformation("PasswordHash column added successfully.");
-                    }
-
-                    var hasIsAdmin = false;
-                    try
-                    {
-                        dbContext.Database.ExecuteSqlRaw("SELECT IsAdmin FROM Providers WHERE 1=0");
-                        hasIsAdmin = true;
-                    }
-                    catch { hasIsAdmin = false; }
-
-                    if (!hasIsAdmin)
-                    {
-                        logger.LogWarning("Adding IsAdmin column to Providers table...");
-                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD IsAdmin BIT NOT NULL DEFAULT 0;");
-                        logger.LogInformation("IsAdmin column added successfully.");
-                    }
-
-                    var hasRequestersTable = false;
-                    try
-                    {
-                        dbContext.Database.ExecuteSqlRaw("SELECT COUNT(*) FROM Requesters WHERE 1=0");
-                        hasRequestersTable = true;
-                    }
-                    catch { hasRequestersTable = false; }
-
-                    if (!hasRequestersTable)
-                    {
-                        logger.LogWarning("Requesters table does not exist. Creating...");
-                        dbContext.Database.EnsureCreated(); // This will create missing tables
-                        logger.LogInformation("Requesters table created successfully.");
-                    }
-
-                    var hasRequesterId = false;
-                    try
-                    {
-                        dbContext.Database.ExecuteSqlRaw("SELECT RequesterId FROM CharterRequests WHERE 1=0");
-                        hasRequesterId = true;
-                    }
-                    catch { hasRequesterId = false; }
-
-                    if (!hasRequesterId)
-                    {
-                        logger.LogWarning("Adding RequesterId column to CharterRequests table...");
-                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE CharterRequests ADD RequesterId INT NULL;");
-                        logger.LogInformation("RequesterId column added successfully.");
-                    }
-                }
-                catch (Exception schemaEx)
-                {
-                    logger.LogWarning(schemaEx, "Could not check/update schema. This is normal for new databases.");
-                }
-            }
-        }
+        await migrator.MigrateAsync();
+        logger.LogInformation("Database migration completed successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error initializing database.");
+        logger.LogError(ex, "Error during database migration.");
         // Don't delete and recreate in production - just log the error
         if (app.Environment.IsDevelopment())
         {
             try
             {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 logger.LogWarning("Development mode: Attempting to recreate database...");
-                dbContext.Database.EnsureDeleted();
-                dbContext.Database.EnsureCreated();
+                await dbContext.Database.EnsureDeletedAsync();
+                await dbContext.Database.EnsureCreatedAsync();
                 logger.LogInformation("Database recreated successfully.");
             }
             catch (Exception recreateEx)

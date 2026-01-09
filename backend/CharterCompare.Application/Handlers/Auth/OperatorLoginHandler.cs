@@ -1,6 +1,7 @@
 using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Auth;
 using CharterCompare.Application.Storage;
+using CharterCompare.Domain.Enums;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 
@@ -28,8 +29,8 @@ public class OperatorLoginHandler : IRequestHandler<OperatorLoginCommand, Operat
             };
         }
 
-        var operatorEntity = await _storage.GetOperatorByEmailAsync(request.Email, cancellationToken);
-        if (operatorEntity == null)
+        var user = await _storage.GetOperatorByEmailAsync(request.Email, cancellationToken);
+        if (user == null || (user.Role != UserRole.Operator && user.Role != UserRole.Admin))
         {
             return new OperatorLoginResponse
             {
@@ -39,7 +40,7 @@ public class OperatorLoginHandler : IRequestHandler<OperatorLoginCommand, Operat
         }
 
         // Check if operator uses email/password authentication
-        if (operatorEntity.ExternalProvider != "Email")
+        if (user.ExternalProvider != "Email")
         {
             return new OperatorLoginResponse
             {
@@ -49,7 +50,7 @@ public class OperatorLoginHandler : IRequestHandler<OperatorLoginCommand, Operat
         }
 
         // Verify password
-        if (string.IsNullOrEmpty(operatorEntity.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, operatorEntity.PasswordHash))
+        if (string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             return new OperatorLoginResponse
             {
@@ -59,8 +60,8 @@ public class OperatorLoginHandler : IRequestHandler<OperatorLoginCommand, Operat
         }
 
         // Update last login
-        operatorEntity.LastLoginAt = DateTime.UtcNow;
-        await _storage.UpdateOperatorAsync(operatorEntity, cancellationToken);
+        user.LastLoginAt = DateTime.UtcNow;
+        await _storage.UpdateUserAsync(user, cancellationToken);
         await _storage.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Operator logged in: {Email}", request.Email);
@@ -70,11 +71,11 @@ public class OperatorLoginHandler : IRequestHandler<OperatorLoginCommand, Operat
             Success = true,
             Operator = new OperatorInfo
             {
-                Id = operatorEntity.Id,
-                Email = operatorEntity.Email,
-                Name = operatorEntity.Name,
-                CompanyName = operatorEntity.CompanyName,
-                IsAdmin = operatorEntity.IsAdmin
+                Id = user.Id,
+                Email = user.Email,
+                Name = user.Name,
+                CompanyName = user.CompanyName,
+                IsAdmin = user.IsAdmin
             }
         };
     }

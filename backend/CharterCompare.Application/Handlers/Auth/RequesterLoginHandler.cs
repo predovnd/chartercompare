@@ -28,8 +28,8 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
             };
         }
 
-        var requester = await _storage.GetRequesterByEmailAsync(request.Email, cancellationToken);
-        if (requester == null)
+        var user = await _storage.GetRequesterByEmailAsync(request.Email, cancellationToken);
+        if (user == null)
         {
             return new RequesterLoginResponse
             {
@@ -39,7 +39,7 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
         }
 
         // Check if requester uses email/password authentication
-        if (requester.ExternalProvider != "Email")
+        if (user.ExternalProvider != "Email")
         {
             return new RequesterLoginResponse
             {
@@ -49,7 +49,7 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
         }
 
         // Verify password
-        if (string.IsNullOrEmpty(requester.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, requester.PasswordHash))
+        if (string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             return new RequesterLoginResponse
             {
@@ -59,8 +59,8 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
         }
 
         // Update last login
-        requester.LastLoginAt = DateTime.UtcNow;
-        await _storage.UpdateRequesterAsync(requester, cancellationToken);
+        user.LastLoginAt = DateTime.UtcNow;
+        await _storage.UpdateUserAsync(user, cancellationToken);
         await _storage.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Requester logged in: {Email}", request.Email);
@@ -70,10 +70,10 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
             Success = true,
             Requester = new RequesterInfo
             {
-                Id = requester.Id,
-                Email = requester.Email,
-                Name = requester.Name,
-                Phone = requester.Phone
+                Id = user.Id,
+                Email = user.Email,
+                Name = user.Name,
+                Phone = user.Phone
             }
         };
     }

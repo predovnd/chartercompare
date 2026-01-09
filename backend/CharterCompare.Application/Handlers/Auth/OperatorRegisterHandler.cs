@@ -2,6 +2,7 @@ using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Auth;
 using CharterCompare.Application.Storage;
 using CharterCompare.Domain.Entities;
+using CharterCompare.Domain.Enums;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 
@@ -29,9 +30,9 @@ public class OperatorRegisterHandler : IRequestHandler<OperatorRegisterCommand, 
             };
         }
 
-        // Check if operator already exists
-        var existingOperator = await _storage.GetOperatorByEmailAsync(request.Email, cancellationToken);
-        if (existingOperator != null)
+        // Check if user already exists
+        var existingUser = await _storage.GetUserByEmailAsync(request.Email, cancellationToken);
+        if (existingUser != null)
         {
             return new OperatorRegisterResponse
             {
@@ -43,8 +44,8 @@ public class OperatorRegisterHandler : IRequestHandler<OperatorRegisterCommand, 
         // Hash password
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
-        // Create operator
-        var operatorEntity = new Operator
+        // Create operator user
+        var user = new User
         {
             Email = request.Email,
             Name = request.Name,
@@ -53,11 +54,16 @@ public class OperatorRegisterHandler : IRequestHandler<OperatorRegisterCommand, 
             ExternalId = Guid.NewGuid().ToString(),
             ExternalProvider = "Email",
             PasswordHash = passwordHash,
+            Role = UserRole.Operator,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
 
-        await _storage.CreateOperatorAsync(operatorEntity, cancellationToken);
+        await _storage.CreateUserAsync(user, cancellationToken);
+        
+        // Set default attribute: Bus for operators
+        await _storage.AddUserAttributeAsync(user.Id, UserAttributeType.Bus, cancellationToken);
+        
         await _storage.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("New operator registered: {Email}", request.Email);
@@ -67,11 +73,11 @@ public class OperatorRegisterHandler : IRequestHandler<OperatorRegisterCommand, 
             Success = true,
             Operator = new OperatorInfo
             {
-                Id = operatorEntity.Id,
-                Email = operatorEntity.Email,
-                Name = operatorEntity.Name,
-                CompanyName = operatorEntity.CompanyName,
-                IsAdmin = operatorEntity.IsAdmin
+                Id = user.Id,
+                Email = user.Email,
+                Name = user.Name,
+                CompanyName = user.CompanyName,
+                IsAdmin = user.IsAdmin
             }
         };
     }

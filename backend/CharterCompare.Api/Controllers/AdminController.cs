@@ -73,4 +73,35 @@ public class AdminController : ControllerBase
 
         return Ok(response.Requests);
     }
+
+    [HttpPut("users/{userId}/attributes")]
+    public async Task<IActionResult> UpdateUserAttributes(int userId, [FromBody] UpdateUserAttributesRequest request)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid("Admin access required");
+        }
+
+        var command = new UpdateUserAttributesCommand
+        {
+            UserId = userId,
+            Attributes = request.Attributes,
+            CompanyName = request.CompanyName
+        };
+
+        var response = await _mediator.Send(command);
+
+        if (!response.Success)
+        {
+            return BadRequest(new { error = response.Error });
+        }
+
+        return Ok(new { message = "User attributes updated successfully" });
+    }
+}
+
+public class UpdateUserAttributesRequest
+{
+    public List<Domain.Enums.UserAttributeType> Attributes { get; set; } = new();
+    public string? CompanyName { get; set; } // Required when setting Business attribute
 }

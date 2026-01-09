@@ -10,28 +10,32 @@ public class ApplicationDbContext : DbContext
     {
     }
 
-    public DbSet<Operator> Providers { get; set; } // Keep table name as Providers for backward compatibility
-    public DbSet<Requester> Requesters { get; set; }
+    public DbSet<User> Users { get; set; }
     public DbSet<CharterRequestRecord> CharterRequests { get; set; }
     public DbSet<Quote> Quotes { get; set; }
+    public DbSet<UserAttribute> UserAttributes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Operator>(entity =>
+        modelBuilder.Entity<User>(entity =>
         {
-            entity.ToTable("Providers"); // Keep table name for backward compatibility
+            entity.ToTable("Users");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Email).IsUnique();
             entity.HasIndex(e => new { e.ExternalId, e.ExternalProvider }).IsUnique();
+            entity.HasMany(e => e.Attributes)
+                .WithOne(a => a.User)
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<Requester>(entity =>
+        modelBuilder.Entity<UserAttribute>(entity =>
         {
+            entity.ToTable("UserAttributes");
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.Email).IsUnique();
-            entity.HasIndex(e => new { e.ExternalId, e.ExternalProvider }).IsUnique();
+            entity.HasIndex(e => new { e.UserId, e.AttributeType }).IsUnique(); // Prevent duplicate attributes
         });
 
         modelBuilder.Entity<CharterRequestRecord>(entity =>

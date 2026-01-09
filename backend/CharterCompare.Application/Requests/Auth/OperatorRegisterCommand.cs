@@ -9,6 +9,7 @@ public class OperatorRegisterCommand : IRequest<OperatorRegisterResponse>
     public string Password { get; set; } = string.Empty;
     public string? CompanyName { get; set; }
     public string? Phone { get; set; }
+    // Note: Attributes default to Bus for operators (set in handler)
 }
 
 public class OperatorRegisterResponse

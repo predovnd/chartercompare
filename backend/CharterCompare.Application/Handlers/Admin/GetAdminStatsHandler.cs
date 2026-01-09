@@ -21,22 +21,18 @@ public class GetAdminStatsHandler : IRequestHandler<GetAdminStatsQuery, GetAdmin
     {
         var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
         var allQuotes = allRequests.SelectMany(r => r.Quotes).ToList();
-        var allOperators = await _storage.GetAllOperatorsAsync(cancellationToken);
+        var allUsers = await _storage.GetAllUsersAsync(cancellationToken);
         
-        // Count requesters - we'll need to get unique requester IDs from requests
-        var uniqueRequesterIds = allRequests
-            .Where(r => r.RequesterId.HasValue)
-            .Select(r => r.RequesterId!.Value)
-            .Distinct()
-            .Count();
+        var operators = allUsers.Where(u => u.Role == Domain.Enums.UserRole.Operator || u.Role == Domain.Enums.UserRole.Admin).Count();
+        var requesters = allUsers.Where(u => u.Role == Domain.Enums.UserRole.Requester).Count();
 
         return new GetAdminStatsResponse
         {
             TotalRequests = allRequests.Count,
             OpenRequests = allRequests.Count(r => r.Status == RequestStatus.Open),
             TotalQuotes = allQuotes.Count,
-            TotalOperators = allOperators.Count,
-            TotalRequesters = uniqueRequesterIds
+            TotalOperators = operators,
+            TotalRequesters = requesters
         };
     }
 }

@@ -30,38 +30,57 @@ public class GetCurrentUserHandler : IRequestHandler<GetCurrentUserQuery, GetCur
             };
         }
 
-        // Check if user is an operator
-        var providerIdClaim = httpContext.User.FindFirst("ProviderId")?.Value;
-        if (!string.IsNullOrEmpty(providerIdClaim) && int.TryParse(providerIdClaim, out var providerId))
+        // Check for UserId claim (unified user model)
+        var userIdClaim = httpContext.User.FindFirst("UserId")?.Value;
+        if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var userId))
         {
-            var operatorEntity = await _storage.GetOperatorByIdAsync(providerId, cancellationToken);
-            if (operatorEntity != null)
+            var user = await _storage.GetUserByIdAsync(userId, cancellationToken);
+            if (user != null)
             {
                 return new GetCurrentUserResponse
                 {
                     IsAuthenticated = true,
-                    Id = operatorEntity.Id,
-                    Email = operatorEntity.Email,
-                    Name = operatorEntity.Name,
-                    UserType = "operator",
-                    IsAdmin = operatorEntity.IsAdmin
+                    Id = user.Id,
+                    Email = user.Email,
+                    Name = user.Name,
+                    UserType = user.Role == Domain.Enums.UserRole.Admin ? "admin" : 
+                               user.Role == Domain.Enums.UserRole.Operator ? "operator" : "requester",
+                    IsAdmin = user.IsAdmin
                 };
             }
         }
 
-        // Check if user is a requester
-        var requesterIdClaim = httpContext.User.FindFirst("RequesterId")?.Value;
-        if (!string.IsNullOrEmpty(requesterIdClaim) && int.TryParse(requesterIdClaim, out var requesterId))
+        // Fallback: Check legacy claims for backward compatibility during migration
+        var providerIdClaim = httpContext.User.FindFirst("ProviderId")?.Value;
+        if (!string.IsNullOrEmpty(providerIdClaim) && int.TryParse(providerIdClaim, out var providerId))
         {
-            var requester = await _storage.GetRequesterByIdAsync(requesterId, cancellationToken);
-            if (requester != null)
+            var user = await _storage.GetOperatorByIdAsync(providerId, cancellationToken);
+            if (user != null)
             {
                 return new GetCurrentUserResponse
                 {
                     IsAuthenticated = true,
-                    Id = requester.Id,
-                    Email = requester.Email,
-                    Name = requester.Name,
+                    Id = user.Id,
+                    Email = user.Email,
+                    Name = user.Name,
+                    UserType = user.IsAdmin ? "admin" : "operator",
+                    IsAdmin = user.IsAdmin
+                };
+            }
+        }
+
+        var requesterIdClaim = httpContext.User.FindFirst("RequesterId")?.Value;
+        if (!string.IsNullOrEmpty(requesterIdClaim) && int.TryParse(requesterIdClaim, out var requesterId))
+        {
+            var user = await _storage.GetRequesterByIdAsync(requesterId, cancellationToken);
+            if (user != null)
+            {
+                return new GetCurrentUserResponse
+                {
+                    IsAuthenticated = true,
+                    Id = user.Id,
+                    Email = user.Email,
+                    Name = user.Name,
                     UserType = "requester",
                     IsAdmin = false
                 };

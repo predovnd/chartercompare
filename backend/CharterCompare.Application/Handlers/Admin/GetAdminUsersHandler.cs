@@ -19,49 +19,33 @@ public class GetAdminUsersHandler : IRequestHandler<GetAdminUsersQuery, GetAdmin
 
     public async Task<GetAdminUsersResponse> Handle(GetAdminUsersQuery request, CancellationToken cancellationToken)
     {
-        var operators = await _storage.GetAllOperatorsAsync(cancellationToken);
-        var requesters = await _storage.GetAllRequestersAsync(cancellationToken);
+        var allUsers = await _storage.GetAllUsersAsync(cancellationToken);
         var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
         
-        var operatorUsers = operators.Select(o => new UserDto
+        var userDtos = allUsers.Select(u => new UserDto
         {
-            Id = o.Id,
-            Email = o.Email,
-            Name = o.Name,
-            CompanyName = o.CompanyName,
-            Phone = o.Phone,
-            ExternalProvider = o.ExternalProvider,
-            IsAdmin = o.IsAdmin,
-            IsActive = o.IsActive,
-            CreatedAt = o.CreatedAt,
-            LastLoginAt = o.LastLoginAt,
-            QuoteCount = o.Quotes.Count,
-            RequestCount = allRequests.Count(r => r.Quotes.Any(q => q.ProviderId == o.Id)),
-            UserType = "operator"
-        }).ToList();
-
-        var requesterUsers = requesters.Select(r => new UserDto
-        {
-            Id = r.Id,
-            Email = r.Email,
-            Name = r.Name,
-            CompanyName = null,
-            Phone = r.Phone,
-            ExternalProvider = r.ExternalProvider,
-            IsAdmin = false,
-            IsActive = r.IsActive,
-            CreatedAt = r.CreatedAt,
-            LastLoginAt = r.LastLoginAt,
-            QuoteCount = 0,
-            RequestCount = r.Requests.Count,
-            UserType = "requester"
-        }).ToList();
-
-        var allUsers = operatorUsers.Concat(requesterUsers).OrderBy(u => u.CreatedAt).ToList();
+            Id = u.Id,
+            Email = u.Email,
+            Name = u.Name,
+            CompanyName = u.CompanyName,
+            Phone = u.Phone,
+            ExternalProvider = u.ExternalProvider,
+            IsAdmin = u.IsAdmin,
+            IsActive = u.IsActive,
+            CreatedAt = u.CreatedAt,
+            LastLoginAt = u.LastLoginAt,
+            QuoteCount = u.Quotes.Count,
+            RequestCount = u.Role == Domain.Enums.UserRole.Requester 
+                ? u.Requests.Count 
+                : allRequests.Count(r => r.Quotes.Any(q => q.ProviderId == u.Id)),
+            UserType = u.Role == Domain.Enums.UserRole.Admin ? "admin" :
+                       u.Role == Domain.Enums.UserRole.Operator ? "operator" : "requester",
+            Attributes = u.Attributes.Select(a => a.AttributeType.ToString()).ToList()
+        }).OrderBy(u => u.CreatedAt).ToList();
 
         return new GetAdminUsersResponse
         {
-            Users = allUsers
+            Users = userDtos
         };
     }
 }

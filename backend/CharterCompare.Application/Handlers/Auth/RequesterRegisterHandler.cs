@@ -2,9 +2,9 @@ using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Auth;
 using CharterCompare.Application.Storage;
 using CharterCompare.Domain.Entities;
+using CharterCompare.Domain.Enums;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
-using RequesterEntity = CharterCompare.Domain.Entities.Requester;
 
 namespace CharterCompare.Application.Handlers.Auth;
 
@@ -30,9 +30,9 @@ public class RequesterRegisterHandler : IRequestHandler<RequesterRegisterCommand
             };
         }
 
-        // Check if requester already exists
-        var existingRequester = await _storage.GetRequesterByEmailAsync(request.Email, cancellationToken);
-        if (existingRequester != null)
+        // Check if user already exists
+        var existingUser = await _storage.GetUserByEmailAsync(request.Email, cancellationToken);
+        if (existingUser != null)
         {
             return new RequesterRegisterResponse
             {
@@ -44,20 +44,27 @@ public class RequesterRegisterHandler : IRequestHandler<RequesterRegisterCommand
         // Hash password
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
-        // Create requester
-        var requester = new RequesterEntity
+        // Create requester user - always Individual by default
+        // Only admins can change requester type to Business
+        var user = new User
         {
             Email = request.Email,
             Name = request.Name,
             Phone = request.Phone,
+            CompanyName = null, // CompanyName only set by admin when changing to Business
             ExternalId = Guid.NewGuid().ToString(),
             ExternalProvider = "Email",
             PasswordHash = passwordHash,
+            Role = UserRole.Requester,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
 
-        await _storage.CreateRequesterAsync(requester, cancellationToken);
+        await _storage.CreateUserAsync(user, cancellationToken);
+        
+        // Set default attribute: Individual for requesters
+        await _storage.AddUserAttributeAsync(user.Id, UserAttributeType.Individual, cancellationToken);
+        
         await _storage.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("New requester registered: {Email}", request.Email);
@@ -67,10 +74,10 @@ public class RequesterRegisterHandler : IRequestHandler<RequesterRegisterCommand
             Success = true,
             Requester = new RequesterInfo
             {
-                Id = requester.Id,
-                Email = requester.Email,
-                Name = requester.Name,
-                Phone = requester.Phone
+                Id = user.Id,
+                Email = user.Email,
+                Name = user.Name,
+                Phone = user.Phone
             }
         };
     }
