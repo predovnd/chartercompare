@@ -1,7 +1,7 @@
 using CharterCompare.Api.Models;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
-using CharterCompare.Api.Data;
+using CharterCompare.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace CharterCompare.Api.Services;
@@ -401,12 +401,68 @@ public class ChatService : IChatService
     private async Task SaveRequestAsync(string sessionId, CharterRequest request)
     {
         // Save to database
-        var requestRecord = new CharterRequestRecord
+        // Convert from Api.Models.CharterRequest to Domain.Entities.CharterRequest
+        var domainRequest = new CharterCompare.Domain.Entities.CharterRequest
+        {
+            Customer = new CharterCompare.Domain.Entities.CustomerInfo
+            {
+                FirstName = request.Customer.FirstName,
+                LastName = request.Customer.LastName,
+                Phone = request.Customer.Phone,
+                Email = request.Customer.Email
+            },
+            Trip = new CharterCompare.Domain.Entities.TripInfo
+            {
+                Type = request.Trip.Type,
+                PassengerCount = request.Trip.PassengerCount,
+                Date = new CharterCompare.Domain.Entities.DateInfo
+                {
+                    RawInput = request.Trip.Date.RawInput,
+                    ResolvedDate = request.Trip.Date.ResolvedDate,
+                    Confidence = request.Trip.Date.Confidence
+                },
+                PickupLocation = new CharterCompare.Domain.Entities.LocationInfo
+                {
+                    RawInput = request.Trip.PickupLocation.RawInput,
+                    ResolvedName = request.Trip.PickupLocation.ResolvedName,
+                    Suburb = request.Trip.PickupLocation.Suburb,
+                    State = request.Trip.PickupLocation.State,
+                    Lat = request.Trip.PickupLocation.Lat,
+                    Lng = request.Trip.PickupLocation.Lng,
+                    Confidence = request.Trip.PickupLocation.Confidence
+                },
+                Destination = new CharterCompare.Domain.Entities.LocationInfo
+                {
+                    RawInput = request.Trip.Destination.RawInput,
+                    ResolvedName = request.Trip.Destination.ResolvedName,
+                    Suburb = request.Trip.Destination.Suburb,
+                    State = request.Trip.Destination.State,
+                    Lat = request.Trip.Destination.Lat,
+                    Lng = request.Trip.Destination.Lng,
+                    Confidence = request.Trip.Destination.Confidence
+                },
+                TripFormat = request.Trip.TripFormat,
+                Timing = new CharterCompare.Domain.Entities.TimingInfo
+                {
+                    RawInput = request.Trip.Timing.RawInput,
+                    PickupTime = request.Trip.Timing.PickupTime,
+                    ReturnTime = request.Trip.Timing.ReturnTime
+                },
+                SpecialRequirements = request.Trip.SpecialRequirements
+            },
+            Meta = new CharterCompare.Domain.Entities.RequestMeta
+            {
+                Source = request.Meta.Source,
+                CreatedAt = request.Meta.CreatedAt
+            }
+        };
+
+        var requestRecord = new CharterCompare.Domain.Entities.CharterRequestRecord
         {
             SessionId = sessionId,
-            RequestData = request,
+            RequestData = domainRequest,
             CreatedAt = DateTime.UtcNow,
-            Status = RequestStatus.Open
+            Status = CharterCompare.Domain.Enums.RequestStatus.Open
         };
         _dbContext.CharterRequests.Add(requestRecord);
         await _dbContext.SaveChangesAsync();

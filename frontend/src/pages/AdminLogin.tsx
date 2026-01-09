@@ -28,15 +28,27 @@ export function AdminLogin() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        navigate('/admin/dashboard');
-      } else {
-        setError(data.error || 'Invalid credentials');
+      if (!response.ok) {
+        // Try to parse error response
+        let errorMessage = 'Invalid credentials';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // If response isn't JSON, use status text
+          errorMessage = response.statusText || `Server error (${response.status})`;
+        }
+        setError(errorMessage);
+        return;
       }
+
+      const data = await response.json();
+      navigate('/admin/dashboard');
     } catch (err) {
-      setError('Failed to connect to server. Please try again.');
+      const errorMessage = err instanceof Error 
+        ? `Failed to connect to server: ${err.message}` 
+        : 'Failed to connect to server. Please ensure the backend is running.';
+      setError(errorMessage);
       console.error('Login error:', err);
     } finally {
       setLoading(false);

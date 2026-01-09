@@ -1,10 +1,12 @@
-using CharterCompare.Api.Models;
-using CharterCompare.Api.Services;
-using CharterCompare.Api.Data;
+using CharterCompare.Application.MediatR;
+using CharterCompare.Application.Storage;
+using CharterCompare.Infrastructure.Data;
+using CharterCompare.Infrastructure.Storage;
+using CharterCompare.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
-using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,10 +14,35 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpContextAccessor();
 
-// Add database
+// Add database - use Infrastructure DbContext
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite("Data Source=chartercompare.db"));
+
+// Register Storage (Infrastructure)
+builder.Services.AddScoped<IStorage, SqlStorage>();
+
+// Register MediatR
+builder.Services.AddScoped<IMediator, SimpleMediator>();
+
+// Register all handlers as their interface types
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.OperatorLoginCommand, CharterCompare.Application.Requests.Auth.OperatorLoginResponse>, CharterCompare.Application.Handlers.Auth.OperatorLoginHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.OperatorRegisterCommand, CharterCompare.Application.Requests.Auth.OperatorRegisterResponse>, CharterCompare.Application.Handlers.Auth.OperatorRegisterHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.RequesterLoginCommand, CharterCompare.Application.Requests.Auth.RequesterLoginResponse>, CharterCompare.Application.Handlers.Auth.RequesterLoginHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.RequesterRegisterCommand, CharterCompare.Application.Requests.Auth.RequesterRegisterResponse>, CharterCompare.Application.Handlers.Auth.RequesterRegisterHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.GetCurrentUserQuery, CharterCompare.Application.Requests.Auth.GetCurrentUserResponse>, CharterCompare.Application.Handlers.Auth.GetCurrentUserHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.CreateAdminCommand, CharterCompare.Application.Requests.Auth.CreateAdminResponse>, CharterCompare.Application.Handlers.Auth.CreateAdminHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Provider.GetProviderRequestsQuery, CharterCompare.Application.Requests.Provider.GetProviderRequestsResponse>, CharterCompare.Application.Handlers.Provider.GetProviderRequestsHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Provider.SubmitQuoteCommand, CharterCompare.Application.Requests.Provider.SubmitQuoteResponse>, CharterCompare.Application.Handlers.Provider.SubmitQuoteHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Requester.GetRequesterRequestsQuery, CharterCompare.Application.Requests.Requester.GetRequesterRequestsResponse>, CharterCompare.Application.Handlers.Requester.GetRequesterRequestsHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminStatsQuery, CharterCompare.Application.Requests.Admin.GetAdminStatsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminStatsHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminUsersQuery, CharterCompare.Application.Requests.Admin.GetAdminUsersResponse>, CharterCompare.Application.Handlers.Admin.GetAdminUsersHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminRequestsQuery, CharterCompare.Application.Requests.Admin.GetAdminRequestsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminRequestsHandler>();
+
+// Register legacy services (ChatService still uses old models)
+builder.Services.AddScoped<CharterCompare.Api.Services.IChatService, CharterCompare.Api.Services.ChatService>();
+builder.Services.AddMemoryCache(); // For chat session storage
 
 // Add CORS for local development
 builder.Services.AddCors(options =>
@@ -56,7 +83,6 @@ var authBuilder = builder.Services.AddAuthentication(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.SameSite = SameSiteMode.Lax;
     options.Cookie.Name = ".AspNetCore.CharterCompare.Cookies";
-    // Store authentication state in cookies
     options.ExpireTimeSpan = TimeSpan.FromDays(30);
     options.SlidingExpiration = true;
 });
@@ -68,118 +94,109 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
     {
         options.ClientId = googleClientId;
         options.ClientSecret = googleClientSecret;
-        // Explicitly set the callback path to match what we're using
-        options.CallbackPath = "/api/auth/google-callback"; // Default for operators
-        // Save tokens for later use if needed
+        options.CallbackPath = "/api/auth/google-callback";
         options.SaveTokens = true;
-        // Configure cookie settings for OAuth state
         options.CorrelationCookie.HttpOnly = true;
         options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.CorrelationCookie.SameSite = SameSiteMode.Lax;
         options.CorrelationCookie.Name = ".AspNetCore.CharterCompare.Correlation.Google";
         options.CorrelationCookie.Path = "/";
-        options.CorrelationCookie.SameSite = SameSiteMode.Lax;
         
-        // Set redirect URI after successful authentication
         var frontendUrl = builder.Configuration["Frontend:Url"] ?? "http://localhost:5173";
         options.Events.OnCreatingTicket = async context =>
         {
-            // This runs after Google authentication succeeds
             var claims = context.Principal?.Claims.ToList();
-            var email = claims?.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
-            var name = claims?.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Name)?.Value;
-            var externalId = claims?.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var email = claims?.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+            var name = claims?.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+            var externalId = claims?.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
 
             if (!string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(externalId))
             {
-                // Get services from the request's service provider
-                var providerService = context.HttpContext.RequestServices.GetRequiredService<IProviderService>();
-                var requesterService = context.HttpContext.RequestServices.GetRequiredService<IRequesterService>();
-                var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+                var storage = context.HttpContext.RequestServices.GetRequiredService<IStorage>();
                 var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
                 
-                // Determine user type from authentication properties
-                // The userType is stored in Properties.Items when the Challenge is initiated
                 var isRequester = context.Properties.Items.TryGetValue("userType", out var userTypeValue) && userTypeValue == "requester";
                 
                 if (isRequester)
                 {
-                    // Handle requester authentication
-                    var requester = await requesterService.GetRequesterByExternalIdAsync(externalId, "Google");
+                    var requester = await storage.GetRequesterByExternalIdAsync(externalId, "Google");
                     if (requester == null)
                     {
-                        requester = await requesterService.CreateRequesterAsync(email, name ?? email, externalId, "Google");
+                        requester = new Requester
+                        {
+                            Email = email,
+                            Name = name ?? email,
+                            ExternalId = externalId,
+                            ExternalProvider = "Google",
+                            CreatedAt = DateTime.UtcNow,
+                            IsActive = true
+                        };
+                        await storage.CreateRequesterAsync(requester);
                         logger.LogInformation("Created new requester: {RequesterId}", requester.Id);
                     }
                     else
                     {
                         requester.LastLoginAt = DateTime.UtcNow;
-                        dbContext.Requesters.Update(requester);
-                        await dbContext.SaveChangesAsync();
+                        if (!string.IsNullOrEmpty(name) && requester.Name != name)
+                        {
+                            requester.Name = name;
+                        }
+                        await storage.UpdateRequesterAsync(requester);
+                        await storage.SaveChangesAsync();
                         logger.LogInformation("Updated existing requester: {RequesterId}", requester.Id);
                     }
 
-                    // Update requester info if name changed
-                    if (!string.IsNullOrEmpty(name) && requester.Name != name)
+                    var sessionClaims = new List<Claim>
                     {
-                        requester.Name = name;
-                        dbContext.Requesters.Update(requester);
-                        await dbContext.SaveChangesAsync();
-                    }
-
-                    // Replace the Google claims with our application claims
-                    var sessionClaims = new List<System.Security.Claims.Claim>
-                    {
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, requester.Id.ToString()),
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, requester.Email),
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, requester.Name),
-                        new System.Security.Claims.Claim("RequesterId", requester.Id.ToString())
+                        new Claim(ClaimTypes.NameIdentifier, requester.Id.ToString()),
+                        new Claim(ClaimTypes.Email, requester.Email),
+                        new Claim(ClaimTypes.Name, requester.Name),
+                        new Claim("RequesterId", requester.Id.ToString())
                     };
 
-                    var claimsIdentity = new System.Security.Claims.ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
-                    context.Principal = new System.Security.Claims.ClaimsPrincipal(claimsIdentity);
-                    
-                    // Set redirect URI
+                    var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
+                    context.Principal = new ClaimsPrincipal(claimsIdentity);
                     context.Properties.RedirectUri = $"{frontendUrl}/requester/dashboard";
                 }
                 else
                 {
-                    // Handle operator/provider authentication (existing logic)
-                    var provider = await providerService.GetProviderByExternalIdAsync(externalId, "Google");
-                    if (provider == null)
+                    var operatorEntity = await storage.GetOperatorByExternalIdAsync(externalId, "Google");
+                    if (operatorEntity == null)
                     {
-                        provider = await providerService.CreateProviderAsync(email, name ?? email, externalId, "Google");
-                        logger.LogInformation("Created new provider: {ProviderId}", provider.Id);
+                        operatorEntity = new Operator
+                        {
+                            Email = email,
+                            Name = name ?? email,
+                            ExternalId = externalId,
+                            ExternalProvider = "Google",
+                            CreatedAt = DateTime.UtcNow,
+                            IsActive = true
+                        };
+                        await storage.CreateOperatorAsync(operatorEntity);
+                        logger.LogInformation("Created new operator: {OperatorId}", operatorEntity.Id);
                     }
                     else
                     {
-                        provider.LastLoginAt = DateTime.UtcNow;
-                        dbContext.Providers.Update(provider);
-                        await dbContext.SaveChangesAsync();
-                        logger.LogInformation("Updated existing provider: {ProviderId}", provider.Id);
+                        operatorEntity.LastLoginAt = DateTime.UtcNow;
+                        if (!string.IsNullOrEmpty(name) && operatorEntity.Name != name)
+                        {
+                            operatorEntity.Name = name;
+                        }
+                        await storage.UpdateOperatorAsync(operatorEntity);
+                        await storage.SaveChangesAsync();
+                        logger.LogInformation("Updated existing operator: {OperatorId}", operatorEntity.Id);
                     }
 
-                    // Update provider info if name changed
-                    if (!string.IsNullOrEmpty(name) && provider.Name != name)
+                    var sessionClaims = new List<Claim>
                     {
-                        provider.Name = name;
-                        dbContext.Providers.Update(provider);
-                        await dbContext.SaveChangesAsync();
-                    }
-
-                    // Replace the Google claims with our application claims
-                    var sessionClaims = new List<System.Security.Claims.Claim>
-                    {
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, provider.Id.ToString()),
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, provider.Email),
-                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, provider.Name),
-                        new System.Security.Claims.Claim("ProviderId", provider.Id.ToString())
+                        new Claim(ClaimTypes.NameIdentifier, operatorEntity.Id.ToString()),
+                        new Claim(ClaimTypes.Email, operatorEntity.Email),
+                        new Claim(ClaimTypes.Name, operatorEntity.Name),
+                        new Claim("ProviderId", operatorEntity.Id.ToString())
                     };
 
-                    var claimsIdentity = new System.Security.Claims.ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
-                    context.Principal = new System.Security.Claims.ClaimsPrincipal(claimsIdentity);
-                    
-                    // Set redirect URI
+                    var claimsIdentity = new ClaimsIdentity(sessionClaims, CookieAuthenticationDefaults.AuthenticationScheme);
+                    context.Principal = new ClaimsPrincipal(claimsIdentity);
                     context.Properties.RedirectUri = $"{frontendUrl}/provider/dashboard";
                 }
             }
@@ -188,12 +205,6 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
         };
     });
 }
-
-// Register services
-builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IProviderService, ProviderService>();
-builder.Services.AddScoped<IRequesterService, RequesterService>();
-builder.Services.AddMemoryCache(); // For session storage (can be replaced with Redis in production)
 
 var app = builder.Build();
 
@@ -205,10 +216,9 @@ using (var scope = app.Services.CreateScope())
     
     try
     {
-        // Check if database exists and if schema needs updating
         if (dbContext.Database.CanConnect())
         {
-            // Try to check if PasswordHash column exists
+            // Check and add missing columns/tables (same logic as before)
             var hasPasswordHash = false;
             var hasIsAdmin = false;
             try
@@ -216,50 +226,36 @@ using (var scope = app.Services.CreateScope())
                 dbContext.Database.ExecuteSqlRaw("SELECT PasswordHash FROM Providers LIMIT 1");
                 hasPasswordHash = true;
             }
-            catch
-            {
-                hasPasswordHash = false;
-            }
+            catch { hasPasswordHash = false; }
             
             try
             {
                 dbContext.Database.ExecuteSqlRaw("SELECT IsAdmin FROM Providers LIMIT 1");
                 hasIsAdmin = true;
             }
-            catch
-            {
-                hasIsAdmin = false;
-            }
+            catch { hasIsAdmin = false; }
             
             if (!hasPasswordHash)
             {
                 logger.LogWarning("Database schema is outdated. Adding PasswordHash column...");
-                dbContext.Database.ExecuteSqlRaw(@"
-                    ALTER TABLE Providers ADD COLUMN PasswordHash TEXT;
-                ");
+                dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD COLUMN PasswordHash TEXT;");
                 logger.LogInformation("PasswordHash column added successfully.");
             }
             
             if (!hasIsAdmin)
             {
                 logger.LogWarning("Database schema is outdated. Adding IsAdmin column...");
-                dbContext.Database.ExecuteSqlRaw(@"
-                    ALTER TABLE Providers ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0;
-                ");
+                dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0;");
                 logger.LogInformation("IsAdmin column added successfully.");
             }
             
-            // Check if Requesters table exists
             var hasRequestersTable = false;
             try
             {
                 dbContext.Database.ExecuteSqlRaw("SELECT COUNT(*) FROM Requesters LIMIT 1");
                 hasRequestersTable = true;
             }
-            catch
-            {
-                hasRequestersTable = false;
-            }
+            catch { hasRequestersTable = false; }
             
             if (!hasRequestersTable)
             {
@@ -282,24 +278,18 @@ using (var scope = app.Services.CreateScope())
                 logger.LogInformation("Requesters table created successfully.");
             }
             
-            // Check if RequesterId column exists in CharterRequests
             var hasRequesterId = false;
             try
             {
                 dbContext.Database.ExecuteSqlRaw("SELECT RequesterId FROM CharterRequests LIMIT 1");
                 hasRequesterId = true;
             }
-            catch
-            {
-                hasRequesterId = false;
-            }
+            catch { hasRequesterId = false; }
             
             if (!hasRequesterId)
             {
                 logger.LogWarning("Database schema is outdated. Adding RequesterId column...");
-                dbContext.Database.ExecuteSqlRaw(@"
-                    ALTER TABLE CharterRequests ADD COLUMN RequesterId INTEGER;
-                ");
+                dbContext.Database.ExecuteSqlRaw("ALTER TABLE CharterRequests ADD COLUMN RequesterId INTEGER;");
                 logger.LogInformation("RequesterId column added successfully.");
             }
         }
@@ -311,7 +301,6 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         logger.LogError(ex, "Error initializing database. Attempting to recreate...");
-        // If migration fails, delete and recreate (development only)
         try
         {
             dbContext.Database.EnsureDeleted();
@@ -325,7 +314,6 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
@@ -333,10 +321,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// CORS must be before other middleware
 app.UseCors("AllowLocalhost");
 
-// Log CORS requests in development
 if (app.Environment.IsDevelopment())
 {
     app.Use(async (context, next) =>
@@ -350,7 +336,6 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Authentication and Authorization must be before MapControllers
 app.UseAuthentication();
 app.UseAuthorization();
 

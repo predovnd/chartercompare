@@ -74,16 +74,29 @@ export function AdminDashboard() {
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         credentials: 'include',
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (!data.isAdmin) {
-          navigate('/admin/login');
-          return;
-        }
-        loadStats();
-      } else {
+      
+      if (!response.ok) {
+        console.error('Auth check failed:', response.status, response.statusText);
         navigate('/admin/login');
+        return;
       }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse auth response:', parseError);
+        navigate('/admin/login');
+        return;
+      }
+
+      if (!data.isAdmin) {
+        console.warn('User is not an admin');
+        navigate('/admin/login');
+        return;
+      }
+
+      loadStats();
     } catch (error) {
       console.error('Auth check failed:', error);
       navigate('/admin/login');
@@ -113,10 +126,21 @@ export function AdminDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setUsers(data);
+        // Handle both array response and object with users property
+        if (Array.isArray(data)) {
+          setUsers(data);
+        } else if (data.users && Array.isArray(data.users)) {
+          setUsers(data.users);
+        } else {
+          setUsers([]);
+        }
+      } else {
+        console.error('Failed to load users:', response.status, response.statusText);
+        setUsers([]);
       }
     } catch (error) {
       console.error('Failed to load users:', error);
+      setUsers([]);
     }
   };
 
@@ -127,10 +151,21 @@ export function AdminDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setRequests(data);
+        // Handle both array response and object with requests property
+        if (Array.isArray(data)) {
+          setRequests(data);
+        } else if (data.requests && Array.isArray(data.requests)) {
+          setRequests(data.requests);
+        } else {
+          setRequests([]);
+        }
+      } else {
+        console.error('Failed to load requests:', response.status, response.statusText);
+        setRequests([]);
       }
     } catch (error) {
       console.error('Failed to load requests:', error);
+      setRequests([]);
     }
   };
 

@@ -47,17 +47,30 @@ export function RequesterDashboard() {
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         credentials: 'include',
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.userType !== 'requester') {
-          navigate('/requester/login');
-          return;
-        }
-        setRequester(data);
-        loadRequests();
-      } else {
+      
+      if (!response.ok) {
+        console.error('Auth check failed:', response.status, response.statusText);
         navigate('/requester/login');
+        return;
       }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse auth response:', parseError);
+        navigate('/requester/login');
+        return;
+      }
+
+      if (data.userType !== 'requester') {
+        console.warn('User is not a requester:', data.userType);
+        navigate('/requester/login');
+        return;
+      }
+
+      setRequester(data);
+      loadRequests();
     } catch (error) {
       console.error('Auth check failed:', error);
       navigate('/requester/login');
@@ -73,10 +86,21 @@ export function RequesterDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setRequests(data);
+        // Handle both array response and object with requests property
+        if (Array.isArray(data)) {
+          setRequests(data);
+        } else if (data.requests && Array.isArray(data.requests)) {
+          setRequests(data.requests);
+        } else {
+          setRequests([]);
+        }
+      } else {
+        console.error('Failed to load requests:', response.status, response.statusText);
+        setRequests([]);
       }
     } catch (error) {
       console.error('Failed to load requests:', error);
+      setRequests([]);
     }
   };
 

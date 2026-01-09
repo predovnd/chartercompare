@@ -39,12 +39,29 @@ export function ProviderDashboard() {
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         credentials: 'include',
       });
-      if (response.ok) {
-        const data = await response.json();
-        setProvider(data);
-      } else {
+      
+      if (!response.ok) {
+        console.error('Auth check failed:', response.status, response.statusText);
         navigate('/provider/login');
+        return;
       }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse auth response:', parseError);
+        navigate('/provider/login');
+        return;
+      }
+
+      if (data.userType !== 'operator') {
+        console.warn('User is not an operator:', data.userType);
+        navigate('/provider/login');
+        return;
+      }
+
+      setProvider(data);
     } catch (error) {
       console.error('Auth check failed:', error);
       navigate('/provider/login');
@@ -60,10 +77,21 @@ export function ProviderDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setRequests(data);
+        // Handle both array response and object with requests property
+        if (Array.isArray(data)) {
+          setRequests(data);
+        } else if (data.requests && Array.isArray(data.requests)) {
+          setRequests(data.requests);
+        } else {
+          setRequests([]);
+        }
+      } else {
+        console.error('Failed to load requests:', response.status, response.statusText);
+        setRequests([]);
       }
     } catch (error) {
       console.error('Failed to load requests:', error);
+      setRequests([]);
     }
   };
 
@@ -143,7 +171,7 @@ export function ProviderDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {requests.length === 0 ? (
+              {!Array.isArray(requests) || requests.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
                   No open requests at the moment
                 </p>
