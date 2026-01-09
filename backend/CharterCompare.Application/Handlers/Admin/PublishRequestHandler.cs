@@ -54,10 +54,12 @@ public class PublishRequestHandler : IRequestHandler<PublishRequestCommand, Publ
             }
 
             // Change status to Published
+            // Published requests are visible to ALL operators (no filtering yet)
+            // Filtering logic will be added later based on operator coverage
             charterRequest.Status = RequestStatus.Published;
             await _storage.UpdateCharterRequestAsync(charterRequest, cancellationToken);
 
-            _logger.LogInformation("Request {RequestId} published by admin", request.RequestId);
+            _logger.LogInformation("Request {RequestId} published by admin - now visible to all operators", request.RequestId);
 
             // TODO: Determine matching operators and notify them (to be implemented later)
 

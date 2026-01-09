@@ -33,7 +33,18 @@ public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, Ge
             RequesterName = r.Requester?.Name,
             QuoteCount = r.Quotes.Count,
             HasLowConfidence = (r.RequestData.Trip.PickupLocation.Confidence == "low" || 
-                               r.RequestData.Trip.Destination.Confidence == "low")
+                               r.RequestData.Trip.Destination.Confidence == "low"),
+            Quotes = r.Quotes.Select(q => new AdminQuoteDto
+            {
+                Id = q.Id,
+                ProviderName = q.Provider?.Name ?? "Unknown",
+                ProviderEmail = q.Provider?.Email ?? "",
+                Price = q.Price,
+                Currency = q.Currency,
+                Notes = q.Notes,
+                Status = q.Status.ToString(),
+                CreatedAt = q.CreatedAt
+            }).ToList()
         }).ToList();
 
         return new GetAdminRequestsResponse

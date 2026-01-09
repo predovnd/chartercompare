@@ -1,64 +1,71 @@
 using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Provider;
 using CharterCompare.Application.Storage;
-using CharterCompare.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 
 namespace CharterCompare.Application.Handlers.Provider;
 
-public class GetProviderRequestsHandler : IRequestHandler<GetProviderRequestsQuery, GetProviderRequestsResponse>
+public class GetProviderQuotesHandler : IRequestHandler<GetProviderQuotesQuery, GetProviderQuotesResponse>
 {
     private readonly IStorage _storage;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly ILogger<GetProviderRequestsHandler> _logger;
+    private readonly ILogger<GetProviderQuotesHandler> _logger;
 
-    public GetProviderRequestsHandler(IStorage storage, IHttpContextAccessor httpContextAccessor, ILogger<GetProviderRequestsHandler> logger)
+    public GetProviderQuotesHandler(IStorage storage, IHttpContextAccessor httpContextAccessor, ILogger<GetProviderQuotesHandler> logger)
     {
         _storage = storage;
         _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
 
-    public async Task<GetProviderRequestsResponse> Handle(GetProviderRequestsQuery request, CancellationToken cancellationToken)
+    public async Task<GetProviderQuotesResponse> Handle(GetProviderQuotesQuery request, CancellationToken cancellationToken)
     {
         var httpContext = _httpContextAccessor.HttpContext;
         var providerIdClaim = httpContext?.User.FindFirst("ProviderId")?.Value;
         
         if (string.IsNullOrEmpty(providerIdClaim) || !int.TryParse(providerIdClaim, out var providerId))
         {
-            return new GetProviderRequestsResponse();
+            return new GetProviderQuotesResponse();
         }
 
-        // Get all published requests - visible to all operators
-        // TODO: Add filtering logic later based on operator coverage, capacity, etc.
-        var requests = await _storage.GetOpenCharterRequestsAsync(cancellationToken);
+        var quotes = await _storage.GetQuotesByProviderIdAsync(providerId, cancellationToken);
         
-        // Get quotes by this provider to check which requests they've already quoted on
-        var providerQuotes = await _storage.GetQuotesByProviderIdAsync(providerId, cancellationToken);
-        var quotedRequestIds = providerQuotes.Select(q => q.CharterRequestId).ToHashSet();
-        
-        var requestDtos = requests.Select(r => new ProviderRequestDto
+        var quoteDtos = quotes.Select(q => new ProviderQuoteDto
         {
-            Id = r.Id,
-            SessionId = r.SessionId,
-            RequestData = MapCharterRequest(r.RequestData),
-            Status = r.Status.ToString(),
-            CreatedAt = r.CreatedAt,
-            QuoteCount = r.Quotes.Count,
-            HasSubmittedQuote = quotedRequestIds.Contains(r.Id)
-        }).ToList();
+            Id = q.Id,
+            RequestId = q.CharterRequestId,
+            Price = q.Price,
+            Currency = q.Currency,
+            Notes = q.Notes,
+            Status = q.Status.ToString(),
+            CreatedAt = q.CreatedAt,
+            Request = MapCharterRequest(q.CharterRequest)
+        }).OrderByDescending(q => q.CreatedAt).ToList();
 
-        return new GetProviderRequestsResponse
+        return new GetProviderQuotesResponse
         {
-            Requests = requestDtos
+            Quotes = quoteDtos
         };
     }
 
-    private CharterRequestDto MapCharterRequest(Domain.Entities.CharterRequest request)
+    private ProviderRequestDto? MapCharterRequest(Domain.Entities.CharterRequestRecord? request)
     {
-        // Simple mapping - in production, use AutoMapper or similar
+        if (request == null) return null;
+        
+        return new ProviderRequestDto
+        {
+            Id = request.Id,
+            SessionId = request.SessionId,
+            RequestData = MapCharterRequestData(request.RequestData),
+            Status = request.Status.ToString(),
+            CreatedAt = request.CreatedAt,
+            QuoteCount = request.Quotes.Count
+        };
+    }
+
+    private CharterRequestDto MapCharterRequestData(Domain.Entities.CharterRequest request)
+    {
         return new CharterRequestDto
         {
             Customer = new CustomerInfoDto

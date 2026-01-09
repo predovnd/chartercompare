@@ -21,11 +21,24 @@ interface Request {
   requestData: any;
   createdAt: string;
   status: string;
+  hasSubmittedQuote?: boolean;
+}
+
+interface Quote {
+  id: number;
+  requestId: number;
+  price: number;
+  currency: string;
+  notes?: string;
+  status: string;
+  createdAt: string;
+  request?: Request;
 }
 
 export function ProviderDashboard() {
   const [provider, setProvider] = useState<Provider | null>(null);
   const [requests, setRequests] = useState<Request[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -62,6 +75,8 @@ export function ProviderDashboard() {
       }
 
       setProvider(data);
+      loadRequests();
+      loadQuotes();
     } catch (error) {
       console.error('Auth check failed:', error);
       navigate('/provider/login');
@@ -92,6 +107,30 @@ export function ProviderDashboard() {
     } catch (error) {
       console.error('Failed to load requests:', error);
       setRequests([]);
+    }
+  };
+
+  const loadQuotes = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/provider/quotes`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setQuotes(data);
+        } else if (data.quotes && Array.isArray(data.quotes)) {
+          setQuotes(data.quotes);
+        } else {
+          setQuotes([]);
+        }
+      } else {
+        console.error('Failed to load quotes:', response.status, response.statusText);
+        setQuotes([]);
+      }
+    } catch (error) {
+      console.error('Failed to load quotes:', error);
+      setQuotes([]);
     }
   };
 
@@ -181,8 +220,67 @@ export function ProviderDashboard() {
                     <RequestCard
                       key={request.id}
                       request={request}
-                      onQuoteSubmitted={loadRequests}
+                      onQuoteSubmitted={() => {
+                        loadRequests();
+                        loadQuotes();
+                      }}
                     />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>My Quotes</CardTitle>
+              <CardDescription>
+                View quotes you've submitted
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {quotes.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No quotes submitted yet
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {quotes.map((quote) => (
+                    <Card key={quote.id} className="bg-muted/30">
+                      <CardContent className="pt-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="font-medium">Request #{quote.requestId}</h3>
+                            {quote.request?.requestData?.trip && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {quote.request.requestData.trip.pickupLocation?.resolvedName || quote.request.requestData.trip.pickupLocation?.rawInput || 'N/A'} → {quote.request.requestData.trip.destination?.resolvedName || quote.request.requestData.trip.destination?.rawInput || 'N/A'}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            quote.status === 'Submitted' ? 'bg-blue-100 text-blue-800' :
+                            quote.status === 'Accepted' ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {quote.status}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-2xl font-bold">${quote.price} {quote.currency}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Submitted {new Date(quote.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          {quote.notes && (
+                            <div className="text-sm text-muted-foreground max-w-md">
+                              <p className="font-medium mb-1">Notes:</p>
+                              <p>{quote.notes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
@@ -199,6 +297,7 @@ function RequestCard({ request, onQuoteSubmitted }: { request: Request; onQuoteS
   const [price, setPrice] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const hasSubmittedQuote = request.hasSubmittedQuote;
 
   const handleSubmitQuote = async () => {
     if (!price || isNaN(parseFloat(price))) {
@@ -247,13 +346,19 @@ function RequestCard({ request, onQuoteSubmitted }: { request: Request; onQuoteS
               {data.trip?.type} • {data.trip?.passengerCount} passengers • {data.trip?.date?.rawInput}
             </CardDescription>
           </div>
-          <Button
-            onClick={() => setShowQuoteForm(!showQuoteForm)}
-            variant={showQuoteForm ? 'outline' : 'default'}
-          >
-            <DollarSign className="h-4 w-4 mr-2" />
-            {showQuoteForm ? 'Cancel' : 'Submit Quote'}
-          </Button>
+          {hasSubmittedQuote ? (
+            <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 font-medium">
+              ✓ Quote Submitted
+            </span>
+          ) : (
+            <Button
+              onClick={() => setShowQuoteForm(!showQuoteForm)}
+              variant={showQuoteForm ? 'outline' : 'default'}
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              {showQuoteForm ? 'Cancel' : 'Submit Quote'}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -287,7 +392,12 @@ function RequestCard({ request, onQuoteSubmitted }: { request: Request; onQuoteS
           </div>
         )}
 
-        {showQuoteForm && (
+        {hasSubmittedQuote && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+            <p className="text-sm font-medium text-green-800">✓ You have already submitted a quote for this request</p>
+          </div>
+        )}
+        {showQuoteForm && !hasSubmittedQuote && (
           <Card className="mt-4 bg-muted/50">
             <CardHeader>
               <CardTitle className="text-lg">Submit Quote</CardTitle>

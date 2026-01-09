@@ -203,6 +203,7 @@ public class SqlStorage : IStorage
     {
         return await _dbContext.Quotes
             .Include(q => q.CharterRequest)
+            .Include(q => q.Provider)
             .Where(q => q.ProviderId == providerId)
             .OrderByDescending(q => q.CreatedAt)
             .ToListAsync(cancellationToken);

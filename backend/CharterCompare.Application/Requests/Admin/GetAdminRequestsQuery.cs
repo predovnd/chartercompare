@@ -24,6 +24,19 @@ public class AdminRequestDto
     public string? RequesterName { get; set; }
     public int QuoteCount { get; set; }
     public bool HasLowConfidence { get; set; }
+    public List<AdminQuoteDto> Quotes { get; set; } = new();
+}
+
+public class AdminQuoteDto
+{
+    public int Id { get; set; }
+    public string ProviderName { get; set; } = string.Empty;
+    public string ProviderEmail { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+    public string Currency { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }
 
 // Reuse DTOs from Provider namespace

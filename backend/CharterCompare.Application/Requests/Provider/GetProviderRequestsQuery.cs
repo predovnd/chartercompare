@@ -19,6 +19,7 @@ public class ProviderRequestDto
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public int QuoteCount { get; set; }
+    public bool HasSubmittedQuote { get; set; }
 }
 
 public class CharterRequestDto

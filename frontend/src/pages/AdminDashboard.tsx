@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { LogOut, Bus, Shield, Users, FileText, DollarSign, TrendingUp, User, UserCheck, Edit, X, AlertCircle, Search, MapPin, Trash2, Settings, CheckCircle, XCircle } from 'lucide-react';
+import { LogOut, Bus, Shield, Users, FileText, DollarSign, TrendingUp, User, UserCheck, Edit, X, AlertCircle, Search, MapPin, Trash2, Settings, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { CoverageMap } from '../components/CoverageMap';
 import { LocationEditor } from '../components/LocationEditor';
 import { useNavigate, Link } from 'react-router-dom';
@@ -112,6 +112,7 @@ export function AdminDashboard() {
   const [showCoverageDialog, setShowCoverageDialog] = useState(false);
   const [editingRequest, setEditingRequest] = useState<EditingRequest | null>(null);
   const [requestSaving, setRequestSaving] = useState(false);
+  const [expandedQuotes, setExpandedQuotes] = useState<Set<number>>(new Set());
   const [coverageConfig, setCoverageConfig] = useState({
     baseLocationName: '',
     coverageRadiusKm: 50,
@@ -1137,13 +1138,80 @@ export function AdminDashboard() {
                           </div>
                         )}
                         {request.quotes && request.quotes.length > 0 && (
-                          <div className="mt-3 pt-3 border-t">
-                            <p className="text-sm font-medium mb-2">Quotes:</p>
-                            {request.quotes.map((quote) => (
-                              <div key={quote.id} className="text-sm text-muted-foreground mb-1">
-                                {quote.providerName}: ${quote.price} {quote.currency} - {quote.status}
+                          <div className="mt-4">
+                            <div 
+                              className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 cursor-pointer hover:bg-blue-100 transition-colors"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedQuotes);
+                                if (newExpanded.has(request.id)) {
+                                  newExpanded.delete(request.id);
+                                } else {
+                                  newExpanded.add(request.id);
+                                }
+                                setExpandedQuotes(newExpanded);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <DollarSign className="h-4 w-4 text-blue-700" />
+                                  <p className="font-semibold text-blue-900">
+                                    {request.quotes.length} Quote{request.quotes.length !== 1 ? 's' : ''}
+                                  </p>
+                                  {!expandedQuotes.has(request.id) && (
+                                    <span className="text-xs text-blue-700">
+                                      (Click to view)
+                                    </span>
+                                  )}
+                                </div>
+                                {expandedQuotes.has(request.id) ? (
+                                  <ChevronUp className="h-4 w-4 text-blue-700" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-blue-700" />
+                                )}
                               </div>
-                            ))}
+                              {!expandedQuotes.has(request.id) && (
+                                <div className="mt-2 flex items-center gap-4 text-xs text-blue-700">
+                                  <span>
+                                    Lowest: ${Math.min(...request.quotes.map(q => q.price))} {request.quotes[0]?.currency}
+                                  </span>
+                                  <span>
+                                    Highest: ${Math.max(...request.quotes.map(q => q.price))} {request.quotes[0]?.currency}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            {expandedQuotes.has(request.id) && (
+                              <div className="mt-3 space-y-2 bg-white border border-blue-200 rounded-lg p-3">
+                                {request.quotes.map((quote) => (
+                                  <div key={quote.id} className="p-3 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
+                                    <div className="flex justify-between items-start mb-2">
+                                      <div>
+                                        <p className="font-medium text-sm">{quote.providerName}</p>
+                                        <p className="text-xs text-muted-foreground">{quote.providerEmail}</p>
+                                      </div>
+                                      <span className={`text-xs px-2 py-1 rounded ${
+                                        quote.status === 'Submitted' ? 'bg-blue-100 text-blue-800' :
+                                        quote.status === 'Accepted' ? 'bg-green-100 text-green-800' :
+                                        'bg-gray-100 text-gray-800'
+                                      }`}>
+                                        {quote.status}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <p className="text-lg font-bold">${quote.price} {quote.currency}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {new Date(quote.createdAt).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                    {quote.notes && (
+                                      <p className="text-sm text-muted-foreground mt-2 pt-2 border-t">
+                                        <span className="font-medium">Notes:</span> {quote.notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

@@ -36,6 +36,22 @@ public class ProviderController : ControllerBase
         }
     }
 
+    [HttpGet("quotes")]
+    public async Task<ActionResult> GetMyQuotes()
+    {
+        try
+        {
+            var query = new GetProviderQuotesQuery();
+            var response = await _mediator.Send(query);
+            return Ok(response.Quotes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching provider quotes");
+            return StatusCode(500, new { error = "Failed to fetch quotes" });
+        }
+    }
+
     [HttpPost("requests/{requestId}/quotes")]
     public async Task<ActionResult> SubmitQuote(int requestId, [FromBody] SubmitQuoteRequest quoteRequest)
     {
