@@ -17,8 +17,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 
 // Add database - use Infrastructure DbContext
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? "Server=(localdb)\\mssqllocaldb;Database=CharterCompare;Trusted_Connection=true;TrustServerCertificate=true;MultipleActiveResultSets=true";
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite("Data Source=chartercompare.db"));
+    options.UseSqlServer(connectionString));
 
 // Register Storage (Infrastructure)
 builder.Services.AddScoped<IStorage, SqlStorage>();
@@ -216,100 +218,124 @@ using (var scope = app.Services.CreateScope())
     
     try
     {
-        if (dbContext.Database.CanConnect())
+        // For SQL Server, use EnsureCreated() which will create the schema based on DbContext
+        // In production, you should use EF Core Migrations instead
+        if (!dbContext.Database.CanConnect())
         {
-            // Check and add missing columns/tables (same logic as before)
-            var hasPasswordHash = false;
-            var hasIsAdmin = false;
-            try
-            {
-                dbContext.Database.ExecuteSqlRaw("SELECT PasswordHash FROM Providers LIMIT 1");
-                hasPasswordHash = true;
-            }
-            catch { hasPasswordHash = false; }
-            
-            try
-            {
-                dbContext.Database.ExecuteSqlRaw("SELECT IsAdmin FROM Providers LIMIT 1");
-                hasIsAdmin = true;
-            }
-            catch { hasIsAdmin = false; }
-            
-            if (!hasPasswordHash)
-            {
-                logger.LogWarning("Database schema is outdated. Adding PasswordHash column...");
-                dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD COLUMN PasswordHash TEXT;");
-                logger.LogInformation("PasswordHash column added successfully.");
-            }
-            
-            if (!hasIsAdmin)
-            {
-                logger.LogWarning("Database schema is outdated. Adding IsAdmin column...");
-                dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0;");
-                logger.LogInformation("IsAdmin column added successfully.");
-            }
-            
-            var hasRequestersTable = false;
-            try
-            {
-                dbContext.Database.ExecuteSqlRaw("SELECT COUNT(*) FROM Requesters LIMIT 1");
-                hasRequestersTable = true;
-            }
-            catch { hasRequestersTable = false; }
-            
-            if (!hasRequestersTable)
-            {
-                logger.LogWarning("Database schema is outdated. Creating Requesters table...");
-                dbContext.Database.ExecuteSqlRaw(@"
-                    CREATE TABLE IF NOT EXISTS Requesters (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Email TEXT NOT NULL UNIQUE,
-                        Name TEXT NOT NULL,
-                        Phone TEXT,
-                        ExternalId TEXT NOT NULL,
-                        ExternalProvider TEXT NOT NULL,
-                        PasswordHash TEXT,
-                        CreatedAt TEXT NOT NULL,
-                        LastLoginAt TEXT,
-                        IsActive INTEGER NOT NULL DEFAULT 1,
-                        UNIQUE(ExternalId, ExternalProvider)
-                    );
-                ");
-                logger.LogInformation("Requesters table created successfully.");
-            }
-            
-            var hasRequesterId = false;
-            try
-            {
-                dbContext.Database.ExecuteSqlRaw("SELECT RequesterId FROM CharterRequests LIMIT 1");
-                hasRequesterId = true;
-            }
-            catch { hasRequesterId = false; }
-            
-            if (!hasRequesterId)
-            {
-                logger.LogWarning("Database schema is outdated. Adding RequesterId column...");
-                dbContext.Database.ExecuteSqlRaw("ALTER TABLE CharterRequests ADD COLUMN RequesterId INTEGER;");
-                logger.LogInformation("RequesterId column added successfully.");
-            }
+            logger.LogInformation("Database does not exist. Creating database...");
+            dbContext.Database.EnsureCreated();
+            logger.LogInformation("Database created successfully.");
         }
         else
         {
-            dbContext.Database.EnsureCreated();
+            // Check if tables exist, if not, create them
+            var tablesExist = false;
+            try
+            {
+                // Try to query a table to see if schema exists
+                dbContext.Database.ExecuteSqlRaw("SELECT TOP 1 Id FROM Providers");
+                tablesExist = true;
+            }
+            catch
+            {
+                tablesExist = false;
+            }
+
+            if (!tablesExist)
+            {
+                logger.LogInformation("Database exists but tables are missing. Creating schema...");
+                dbContext.Database.EnsureCreated();
+                logger.LogInformation("Database schema created successfully.");
+            }
+            else
+            {
+                // Check and add missing columns if needed (for existing databases)
+                try
+                {
+                    var hasPasswordHash = false;
+                    try
+                    {
+                        dbContext.Database.ExecuteSqlRaw("SELECT PasswordHash FROM Providers WHERE 1=0");
+                        hasPasswordHash = true;
+                    }
+                    catch { hasPasswordHash = false; }
+
+                    if (!hasPasswordHash)
+                    {
+                        logger.LogWarning("Adding PasswordHash column to Providers table...");
+                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD PasswordHash NVARCHAR(MAX) NULL;");
+                        logger.LogInformation("PasswordHash column added successfully.");
+                    }
+
+                    var hasIsAdmin = false;
+                    try
+                    {
+                        dbContext.Database.ExecuteSqlRaw("SELECT IsAdmin FROM Providers WHERE 1=0");
+                        hasIsAdmin = true;
+                    }
+                    catch { hasIsAdmin = false; }
+
+                    if (!hasIsAdmin)
+                    {
+                        logger.LogWarning("Adding IsAdmin column to Providers table...");
+                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE Providers ADD IsAdmin BIT NOT NULL DEFAULT 0;");
+                        logger.LogInformation("IsAdmin column added successfully.");
+                    }
+
+                    var hasRequestersTable = false;
+                    try
+                    {
+                        dbContext.Database.ExecuteSqlRaw("SELECT COUNT(*) FROM Requesters WHERE 1=0");
+                        hasRequestersTable = true;
+                    }
+                    catch { hasRequestersTable = false; }
+
+                    if (!hasRequestersTable)
+                    {
+                        logger.LogWarning("Requesters table does not exist. Creating...");
+                        dbContext.Database.EnsureCreated(); // This will create missing tables
+                        logger.LogInformation("Requesters table created successfully.");
+                    }
+
+                    var hasRequesterId = false;
+                    try
+                    {
+                        dbContext.Database.ExecuteSqlRaw("SELECT RequesterId FROM CharterRequests WHERE 1=0");
+                        hasRequesterId = true;
+                    }
+                    catch { hasRequesterId = false; }
+
+                    if (!hasRequesterId)
+                    {
+                        logger.LogWarning("Adding RequesterId column to CharterRequests table...");
+                        dbContext.Database.ExecuteSqlRaw("ALTER TABLE CharterRequests ADD RequesterId INT NULL;");
+                        logger.LogInformation("RequesterId column added successfully.");
+                    }
+                }
+                catch (Exception schemaEx)
+                {
+                    logger.LogWarning(schemaEx, "Could not check/update schema. This is normal for new databases.");
+                }
+            }
         }
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error initializing database. Attempting to recreate...");
-        try
+        logger.LogError(ex, "Error initializing database.");
+        // Don't delete and recreate in production - just log the error
+        if (app.Environment.IsDevelopment())
         {
-            dbContext.Database.EnsureDeleted();
-            dbContext.Database.EnsureCreated();
-            logger.LogInformation("Database recreated successfully.");
-        }
-        catch (Exception recreateEx)
-        {
-            logger.LogError(recreateEx, "Failed to recreate database.");
+            try
+            {
+                logger.LogWarning("Development mode: Attempting to recreate database...");
+                dbContext.Database.EnsureDeleted();
+                dbContext.Database.EnsureCreated();
+                logger.LogInformation("Database recreated successfully.");
+            }
+            catch (Exception recreateEx)
+            {
+                logger.LogError(recreateEx, "Failed to recreate database.");
+            }
         }
     }
 }

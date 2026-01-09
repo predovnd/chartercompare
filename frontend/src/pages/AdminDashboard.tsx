@@ -26,6 +26,7 @@ interface User {
   lastLoginAt?: string;
   quoteCount: number;
   requestCount: number;
+  userType: string; // "operator" or "requester"
 }
 
 interface Request {
@@ -311,10 +312,13 @@ export function AdminDashboard() {
                     const getUserType = () => {
                       if (user.isAdmin) {
                         return { type: 'Admin', icon: Shield, color: 'text-purple-600', bgColor: 'bg-purple-100' };
-                      } else if (user.externalProvider === 'Email' || user.externalProvider === 'Google') {
+                      } else if (user.userType === 'operator') {
                         return { type: 'Operator', icon: UserCheck, color: 'text-blue-600', bgColor: 'bg-blue-100' };
-                      } else {
+                      } else if (user.userType === 'requester') {
                         return { type: 'Requester', icon: User, color: 'text-green-600', bgColor: 'bg-green-100' };
+                      } else {
+                        // Fallback for backward compatibility
+                        return { type: 'Operator', icon: UserCheck, color: 'text-blue-600', bgColor: 'bg-blue-100' };
                       }
                     };
 

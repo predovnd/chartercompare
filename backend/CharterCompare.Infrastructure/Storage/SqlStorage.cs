@@ -99,6 +99,13 @@ public class SqlStorage : IStorage
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<List<Requester>> GetAllRequestersAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Requesters
+            .Include(r => r.Requests)
+            .ToListAsync(cancellationToken);
+    }
+
     // CharterRequestRecord operations
     public async Task<CharterRequestRecord?> GetCharterRequestByIdAsync(int requestId, CancellationToken cancellationToken = default)
     {

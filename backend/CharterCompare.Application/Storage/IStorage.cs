@@ -18,6 +18,7 @@ public interface IStorage
     Task<Requester?> GetRequesterByExternalIdAsync(string externalId, string provider, CancellationToken cancellationToken = default);
     Task<Requester> CreateRequesterAsync(Requester requester, CancellationToken cancellationToken = default);
     Task UpdateRequesterAsync(Requester requester, CancellationToken cancellationToken = default);
+    Task<List<Requester>> GetAllRequestersAsync(CancellationToken cancellationToken = default);
 
     // CharterRequestRecord operations
     Task<CharterRequestRecord?> GetCharterRequestByIdAsync(int requestId, CancellationToken cancellationToken = default);

@@ -20,9 +20,10 @@ public class GetAdminUsersHandler : IRequestHandler<GetAdminUsersQuery, GetAdmin
     public async Task<GetAdminUsersResponse> Handle(GetAdminUsersQuery request, CancellationToken cancellationToken)
     {
         var operators = await _storage.GetAllOperatorsAsync(cancellationToken);
+        var requesters = await _storage.GetAllRequestersAsync(cancellationToken);
         var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
         
-        var users = operators.Select(o => new UserDto
+        var operatorUsers = operators.Select(o => new UserDto
         {
             Id = o.Id,
             Email = o.Email,
@@ -39,9 +40,28 @@ public class GetAdminUsersHandler : IRequestHandler<GetAdminUsersQuery, GetAdmin
             UserType = "operator"
         }).ToList();
 
+        var requesterUsers = requesters.Select(r => new UserDto
+        {
+            Id = r.Id,
+            Email = r.Email,
+            Name = r.Name,
+            CompanyName = null,
+            Phone = r.Phone,
+            ExternalProvider = r.ExternalProvider,
+            IsAdmin = false,
+            IsActive = r.IsActive,
+            CreatedAt = r.CreatedAt,
+            LastLoginAt = r.LastLoginAt,
+            QuoteCount = 0,
+            RequestCount = r.Requests.Count,
+            UserType = "requester"
+        }).ToList();
+
+        var allUsers = operatorUsers.Concat(requesterUsers).OrderBy(u => u.CreatedAt).ToList();
+
         return new GetAdminUsersResponse
         {
-            Users = users
+            Users = allUsers
         };
     }
 }
