@@ -1,19 +1,22 @@
 using CharterCompare.Api.Models;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
+using CharterCompare.Api.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace CharterCompare.Api.Services;
 
 public class ChatService : IChatService
 {
     private readonly IMemoryCache _cache;
+    private readonly ApplicationDbContext _dbContext;
     private readonly ILogger<ChatService> _logger;
     private const string CacheKeyPrefix = "chat_session_";
 
-    public ChatService(IMemoryCache cache, ILogger<ChatService> logger)
+    public ChatService(IMemoryCache cache, ApplicationDbContext dbContext, ILogger<ChatService> logger)
     {
         _cache = cache;
+        _dbContext = dbContext;
         _logger = logger;
     }
 
@@ -61,7 +64,6 @@ public class ChatService : IChatService
         var isComplete = false;
         CharterRequest? finalPayload = null;
         string? icon = null;
-        var isError = false;
 
         switch (state.Step)
         {
@@ -79,7 +81,6 @@ public class ChatService : IChatService
                 {
                     replyText = "I need a number — about how many passengers will be travelling?";
                     icon = GetIconForStep(ChatStep.PassengerCount, true);
-                    isError = true;
                     break;
                 }
                 newState.Data.Trip ??= new PartialTripInfo();
@@ -158,7 +159,6 @@ public class ChatService : IChatService
                 {
                     replyText = "Just to confirm — one-way, or return on the same day?";
                     icon = GetIconForStep(ChatStep.TripFormat, true);
-                    isError = true;
                     break;
                 }
                 newState.Data.Trip ??= new PartialTripInfo();
@@ -193,7 +193,6 @@ public class ChatService : IChatService
                 {
                     replyText = "That doesn't look like a valid email — what's the best email to send the results to?";
                     icon = GetIconForStep(ChatStep.Email, true);
-                    isError = true;
                     break;
                 }
                 newState.Data.Customer ??= new PartialCustomerInfo();
@@ -206,18 +205,19 @@ public class ChatService : IChatService
                 // Build final payload
                 finalPayload = BuildFinalPayload(newState);
 
-                // Write JSON payload to file
+                // Save to database and file
                 if (finalPayload != null)
                 {
                     try
                     {
+                        await SaveRequestAsync(newState.SessionId, finalPayload);
                         await WriteJsonToFileAsync(finalPayload);
-                        _logger.LogInformation("JSON payload written to file for session {SessionId}", newState.SessionId);
+                        _logger.LogInformation("Request saved for session {SessionId}", newState.SessionId);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to write JSON file for session {SessionId}", newState.SessionId);
-                        // Don't fail the request if file write fails, just log it
+                        _logger.LogError(ex, "Failed to save request for session {SessionId}", newState.SessionId);
+                        // Don't fail the request if save fails, just log it
                     }
                 }
                 break;
@@ -396,6 +396,20 @@ public class ChatService : IChatService
                 CreatedAt = DateTime.UtcNow.ToString("O")
             }
         };
+    }
+
+    private async Task SaveRequestAsync(string sessionId, CharterRequest request)
+    {
+        // Save to database
+        var requestRecord = new CharterRequestRecord
+        {
+            SessionId = sessionId,
+            RequestData = request,
+            CreatedAt = DateTime.UtcNow,
+            Status = RequestStatus.Open
+        };
+        _dbContext.CharterRequests.Add(requestRecord);
+        await _dbContext.SaveChangesAsync();
     }
 
     private async Task WriteJsonToFileAsync(CharterRequest request)
