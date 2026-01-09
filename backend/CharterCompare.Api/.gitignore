@@ -72,3 +72,9 @@ artifacts/
 # Request JSON files
 requests/
 *.json
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+chartercompare.db
