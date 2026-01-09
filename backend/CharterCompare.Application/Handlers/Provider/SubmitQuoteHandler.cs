@@ -1,5 +1,6 @@
 using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Provider;
+using CharterCompare.Application.Services;
 using CharterCompare.Application.Storage;
 using CharterCompare.Domain.Entities;
 using CharterCompare.Domain.Enums;
@@ -12,12 +13,18 @@ public class SubmitQuoteHandler : IRequestHandler<SubmitQuoteCommand, SubmitQuot
 {
     private readonly IStorage _storage;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<SubmitQuoteHandler> _logger;
 
-    public SubmitQuoteHandler(IStorage storage, IHttpContextAccessor httpContextAccessor, ILogger<SubmitQuoteHandler> logger)
+    public SubmitQuoteHandler(
+        IStorage storage, 
+        IHttpContextAccessor httpContextAccessor, 
+        INotificationService notificationService,
+        ILogger<SubmitQuoteHandler> logger)
     {
         _storage = storage;
         _httpContextAccessor = httpContextAccessor;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -60,15 +67,46 @@ public class SubmitQuoteHandler : IRequestHandler<SubmitQuoteCommand, SubmitQuot
 
         await _storage.CreateQuoteAsync(quote, cancellationToken);
 
+        // Reload request with quotes to get accurate count
+        charterRequest = await _storage.GetCharterRequestByIdAsync(request.RequestId, cancellationToken);
+        if (charterRequest == null)
+        {
+            return new SubmitQuoteResponse
+            {
+                Success = false,
+                Error = "Request not found after quote creation"
+            };
+        }
+
+        var quoteCount = charterRequest.Quotes.Count;
+        var isFirstQuote = quoteCount == 1;
+
         // Update request status if first quote
-        var quoteCount = (await _storage.GetQuotesByRequestIdAsync(request.RequestId, cancellationToken)).Count;
-        if (quoteCount == 1)
+        if (isFirstQuote)
         {
             charterRequest.Status = RequestStatus.QuotesReceived;
             await _storage.UpdateCharterRequestAsync(charterRequest, cancellationToken);
         }
 
         await _storage.SaveChangesAsync(cancellationToken);
+
+        // Send notifications
+        try
+        {
+            if (isFirstQuote)
+            {
+                await _notificationService.NotifyFirstQuoteReceivedAsync(charterRequest, quote, cancellationToken);
+            }
+            else
+            {
+                await _notificationService.NotifyNewQuoteReceivedAsync(charterRequest, quote, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the quote submission if notification fails
+            _logger.LogError(ex, "Failed to send notification for quote {QuoteId}", quote.Id);
+        }
 
         _logger.LogInformation("Quote submitted by provider {ProviderId} for request {RequestId}", providerId, request.RequestId);
 

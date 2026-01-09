@@ -1,6 +1,7 @@
 using CharterCompare.Application.MediatR;
 using CharterCompare.Application.Requests.Admin;
 using CharterCompare.Application.Storage;
+using CharterCompare.Application.Services;
 using CharterCompare.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -9,11 +10,13 @@ namespace CharterCompare.Application.Handlers.Admin;
 public class PublishRequestHandler : IRequestHandler<PublishRequestCommand, PublishRequestResponse>
 {
     private readonly IStorage _storage;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<PublishRequestHandler> _logger;
 
-    public PublishRequestHandler(IStorage storage, ILogger<PublishRequestHandler> logger)
+    public PublishRequestHandler(IStorage storage, INotificationService notificationService, ILogger<PublishRequestHandler> logger)
     {
         _storage = storage;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -57,11 +60,37 @@ public class PublishRequestHandler : IRequestHandler<PublishRequestCommand, Publ
             // Published requests are visible to ALL operators (no filtering yet)
             // Filtering logic will be added later based on operator coverage
             charterRequest.Status = RequestStatus.Published;
+            
+            // Set quote deadline to 24 hours from now
+            charterRequest.QuoteDeadline = DateTime.UtcNow.AddHours(24);
+            
             await _storage.UpdateCharterRequestAsync(charterRequest, cancellationToken);
 
             _logger.LogInformation("Request {RequestId} published by admin - now visible to all operators", request.RequestId);
 
-            // TODO: Determine matching operators and notify them (to be implemented later)
+            // Notify all active operators about the published request
+            try
+            {
+                var allOperators = await _storage.GetUsersByRoleAsync(UserRole.Operator, cancellationToken);
+                var activeOperators = allOperators.Where(o => o.IsActive).ToList();
+                
+                if (activeOperators.Any())
+                {
+                    _logger.LogInformation("Notifying {Count} active operators about published request {RequestId}", 
+                        activeOperators.Count, request.RequestId);
+                    
+                    await _notificationService.NotifyOperatorsRequestPublishedAsync(charterRequest, activeOperators, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("No active operators found to notify for request {RequestId}", request.RequestId);
+                }
+            }
+            catch (Exception notifyEx)
+            {
+                _logger.LogError(notifyEx, "Error notifying operators about published request {RequestId}", request.RequestId);
+                // Don't fail the publish operation if notification fails
+            }
 
             return new PublishRequestResponse
             {

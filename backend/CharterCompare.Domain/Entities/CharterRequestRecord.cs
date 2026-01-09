@@ -10,8 +10,10 @@ public class CharterRequestRecord
     public string? RawJsonPayload { get; set; } // Store the raw JSON payload for admin viewing
     public int? RequesterId { get; set; } // Link to requester account (nullable for anonymous requests)
     public User? Requester { get; set; }
+    public string? Email { get; set; } // Email from request (for anonymous users or quick access)
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public RequestStatus Status { get; set; } = RequestStatus.Draft;
+    public DateTime? QuoteDeadline { get; set; } // 24 hours from when request is published
     public List<Quote> Quotes { get; set; } = new();
 }
 

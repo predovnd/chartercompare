@@ -4,6 +4,10 @@ using Microsoft.Extensions.Caching.Memory;
 using CharterCompare.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace CharterCompare.Api.Services;
 
@@ -13,14 +17,18 @@ public class ChatService : IChatService
     private readonly ApplicationDbContext _dbContext;
     private readonly ILogger<ChatService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IConfiguration _configuration;
+    private readonly IServiceProvider _serviceProvider;
     private const string CacheKeyPrefix = "chat_session_";
 
-    public ChatService(IMemoryCache cache, ApplicationDbContext dbContext, ILogger<ChatService> logger, IHttpContextAccessor httpContextAccessor)
+    public ChatService(IMemoryCache cache, ApplicationDbContext dbContext, ILogger<ChatService> logger, IHttpContextAccessor httpContextAccessor, IConfiguration configuration, IServiceProvider serviceProvider)
     {
         _cache = cache;
         _dbContext = dbContext;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
+        _configuration = configuration;
+        _serviceProvider = serviceProvider;
     }
 
     public Task<StartChatResponse> StartChatAsync(StartChatRequest request)
@@ -91,6 +99,55 @@ public class ChatService : IChatService
                     ResolvedName = request.Text.Trim(),
                     Confidence = "low"
                 };
+                
+                // Check if user is authenticated - if not, ask for email
+                var httpContextForEmail = _httpContextAccessor.HttpContext;
+                bool isAuthenticated = false;
+                if (httpContextForEmail != null)
+                {
+                    try
+                    {
+                        var authResult = await httpContextForEmail.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                        if (authResult?.Succeeded == true && authResult.Principal != null)
+                        {
+                            httpContextForEmail.User = authResult.Principal;
+                            isAuthenticated = httpContextForEmail.User.Identity?.IsAuthenticated == true;
+                        }
+                    }
+                    catch (Exception authEx)
+                    {
+                        _logger.LogWarning(authEx, "Error during authentication check");
+                    }
+                }
+                
+                if (!isAuthenticated)
+                {
+                    // Not authenticated - ask for email
+                    newState.Step = ChatStep.Email;
+                    replyText = "Great! What's your email address? We'll send you quotes from available providers.";
+                    icon = GetIconForStep(ChatStep.Email);
+                }
+                else
+                {
+                    // Authenticated - skip email and complete
+                    newState.Step = ChatStep.Complete;
+                    replyText = "Perfect! I've got your request. We'll send you quotes from available providers shortly.";
+                    isComplete = true;
+                    icon = GetIconForStep(ChatStep.Complete);
+                }
+                break;
+                
+            case ChatStep.Email:
+                var emailInput = request.Text.Trim();
+                if (!IsValidEmail(emailInput))
+                {
+                    replyText = "That doesn't look like a valid email address. Could you please provide your email?";
+                    icon = GetIconForStep(ChatStep.Email);
+                    break;
+                }
+                
+                newState.Data.Customer ??= new PartialCustomerInfo();
+                newState.Data.Customer.Email = emailInput;
                 newState.Step = ChatStep.Complete;
                 replyText = "Perfect! I've got your request. We'll send you quotes from available providers shortly.";
                 isComplete = true;
@@ -98,6 +155,12 @@ public class ChatService : IChatService
 
                 // Build final payload
                 finalPayload = BuildFinalPayload(newState);
+                
+                // Ensure email is set from chat data if provided
+                if (finalPayload != null && !string.IsNullOrEmpty(newState.Data.Customer?.Email))
+                {
+                    finalPayload.Customer.Email = newState.Data.Customer.Email;
+                }
 
                 // Save to database with raw JSON
                 if (finalPayload != null)
@@ -109,20 +172,120 @@ public class ChatService : IChatService
                             WriteIndented = true
                         });
                         
-                        // Get requester ID if user is authenticated
+                        // Get requester ID and email if user is authenticated
                         int? requesterId = null;
-                        var httpContext = _httpContextAccessor.HttpContext;
-                        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+                        string? userEmail = null;
+                        var httpContextForSave = _httpContextAccessor.HttpContext;
+                        
+                        // Explicitly authenticate the request to read the cookie (even for anonymous endpoints)
+                        if (httpContextForSave != null)
                         {
-                            var requesterIdClaim = httpContext.User.FindFirst("RequesterId")?.Value;
+                            try
+                            {
+                                var authResult = await httpContextForSave.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                                if (authResult?.Succeeded == true && authResult.Principal != null)
+                                {
+                                    // Replace the user principal with the authenticated one
+                                    httpContextForSave.User = authResult.Principal;
+                                    _logger.LogInformation("Successfully authenticated user from cookie");
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Authentication attempt failed or no principal");
+                                }
+                            }
+                            catch (Exception authEx)
+                            {
+                                _logger.LogWarning(authEx, "Error during explicit authentication");
+                            }
+                        }
+                        
+                        _logger.LogInformation("Checking authentication - IsAuthenticated: {IsAuthenticated}, HttpContext: {HasContext}", 
+                            httpContextForSave?.User?.Identity?.IsAuthenticated ?? false, httpContextForSave != null);
+                        
+                        if (httpContextForSave?.User?.Identity?.IsAuthenticated == true)
+                        {
+                            // Log all claims for debugging
+                            var allClaims = httpContextForSave.User.Claims.Select(c => $"{c.Type}={c.Value}").ToList();
+                            _logger.LogInformation("User claims: {Claims}", string.Join(", ", allClaims));
+                            
+                            // Try RequesterId claim first (for requesters)
+                            var requesterIdClaim = httpContextForSave.User.FindFirst("RequesterId")?.Value;
                             if (requesterIdClaim != null && int.TryParse(requesterIdClaim, out var parsedId))
                             {
                                 requesterId = parsedId;
+                                _logger.LogInformation("Found RequesterId from RequesterId claim: {RequesterId}", requesterId);
                             }
+                            
+                            // Also try UserId claim and check if user is a requester by looking up the user
+                            if (requesterId == null)
+                            {
+                                var userIdClaim = httpContextForSave.User.FindFirst("UserId")?.Value;
+                                if (userIdClaim != null && int.TryParse(userIdClaim, out var parsedUserId))
+                                {
+                                    _logger.LogInformation("Found UserId claim: {UserId}, checking if requester...", parsedUserId);
+                                    // Check if this user is a requester by looking up the user
+                                    try
+                                    {
+                                        var user = await _dbContext.Users.FindAsync(new object[] { parsedUserId });
+                                        if (user != null && user.Role == CharterCompare.Domain.Enums.UserRole.Requester)
+                                        {
+                                            requesterId = parsedUserId;
+                                            _logger.LogInformation("Found RequesterId from UserId claim (user is requester): {RequesterId}", requesterId);
+                                        }
+                                        else
+                                        {
+                                            _logger.LogWarning("UserId {UserId} is not a requester (Role: {Role})", parsedUserId, user?.Role);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Could not verify if user {UserId} is a requester", parsedUserId);
+                                    }
+                                }
+                            }
+                            
+                            // Get email from claims
+                            userEmail = httpContextForSave.User.FindFirst(ClaimTypes.Email)?.Value;
+                            _logger.LogInformation("Authenticated user - Email: {Email}, RequesterId: {RequesterId}", userEmail, requesterId);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("User is not authenticated when saving request. HttpContext available: {HasContext}", httpContextForSave != null);
+                        }
+                        
+                        // Update finalPayload with authenticated user's email if available (but don't override email from chat)
+                        if (userEmail != null && finalPayload != null && string.IsNullOrEmpty(finalPayload.Customer.Email))
+                        {
+                            finalPayload.Customer.Email = userEmail;
+                            _logger.LogInformation("Updated finalPayload with authenticated user email: {Email}", userEmail);
                         }
                         
                         await SaveRequestAsync(newState.SessionId, finalPayload, rawJson, requesterId);
                         _logger.LogInformation("Request saved for session {SessionId}, RequesterId: {RequesterId}", newState.SessionId, requesterId);
+                        
+                        // Send notification email with quote link
+                        try
+                        {
+                            var allRequests = await _dbContext.CharterRequests
+                                .Where(r => r.SessionId == newState.SessionId)
+                                .OrderByDescending(r => r.CreatedAt)
+                                .FirstOrDefaultAsync();
+                            
+                            if (allRequests != null)
+                            {
+                                var frontendUrl = _configuration["Frontend:Url"] ?? "http://localhost:5173";
+                                var quoteLink = $"{frontendUrl}/quotes/{newState.SessionId}";
+                                
+                                var notificationService = _serviceProvider.GetRequiredService<CharterCompare.Application.Services.INotificationService>();
+                                await notificationService.NotifyRequestSubmittedAsync(allRequests, quoteLink);
+                            }
+                        }
+                        catch (Exception notifEx)
+                        {
+                            _logger.LogError(notifEx, "Failed to send request submission notification for session {SessionId}", newState.SessionId);
+                            // Don't fail the request if notification fails
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -251,14 +414,26 @@ public class ChatService : IChatService
     {
         var trip = state.Data.Trip ?? new PartialTripInfo();
 
+        // Get authenticated user's email if available
+        string? userEmail = null;
+        string? userName = null;
+        string? userPhone = null;
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            userEmail = httpContext.User.FindFirst(ClaimTypes.Email)?.Value;
+            userName = httpContext.User.FindFirst(ClaimTypes.Name)?.Value;
+            userPhone = httpContext.User.FindFirst(ClaimTypes.MobilePhone)?.Value;
+        }
+
         return new CharterRequest
         {
             Customer = new CustomerInfo
             {
-                FirstName = "",
-                LastName = "",
-                Phone = "",
-                Email = ""
+                FirstName = userName?.Split(' ').FirstOrDefault() ?? "",
+                LastName = userName?.Split(' ').Skip(1).FirstOrDefault() ?? "",
+                Phone = userPhone ?? "",
+                Email = userEmail ?? ""
             },
             Trip = new TripInfo
             {
@@ -372,11 +547,18 @@ public class ChatService : IChatService
             RequestData = domainRequest,
             RawJsonPayload = rawJsonPayload,
             RequesterId = requesterId,
+            Email = request.Customer.Email, // Capture email for easy access and notifications
             CreatedAt = DateTime.UtcNow,
             Status = CharterCompare.Domain.Enums.RequestStatus.Draft // New requests start as Draft, need admin review
         };
+        
+        _logger.LogInformation("Creating request record - SessionId: {SessionId}, RequesterId: {RequesterId}, Email: {Email}", 
+            sessionId, requesterId, request.Customer.Email);
         _dbContext.CharterRequests.Add(requestRecord);
         await _dbContext.SaveChangesAsync();
+        
+        _logger.LogInformation("Request saved successfully - Id: {RequestId}, SessionId: {SessionId}, RequesterId: {RequesterId}", 
+            requestRecord.Id, sessionId, requesterId);
     }
 
     private async Task WriteJsonToFileAsync(CharterRequest request)

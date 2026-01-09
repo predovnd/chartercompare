@@ -1,6 +1,7 @@
 using CharterCompare.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Data.Common;
 
 namespace CharterCompare.Infrastructure.Migrations;
 
@@ -51,6 +52,8 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                     await EnsureOperatorCoveragesTableExistsAsync(cancellationToken);
                     await DropOldTypeColumnsAsync(cancellationToken);
                     await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
+                    await EnsureQuoteDeadlineColumnExistsAsync(cancellationToken);
+                    await EnsureEmailColumnExistsAsync(cancellationToken);
                     await MigrateDataFromOldSchemaAsync(cancellationToken);
                 }
                 else
@@ -70,6 +73,12 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                     // Ensure RawJsonPayload column exists
                     await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
                     
+                    // Ensure QuoteDeadline column exists
+                    await EnsureQuoteDeadlineColumnExistsAsync(cancellationToken);
+                    
+                    // Ensure Email column exists
+                    await EnsureEmailColumnExistsAsync(cancellationToken);
+                    
                     _logger.LogInformation("Database schema created successfully.");
                 }
             }
@@ -88,6 +97,12 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
                 
                 // Ensure RawJsonPayload column exists in CharterRequests table
                 await EnsureRawJsonPayloadColumnExistsAsync(cancellationToken);
+                
+                // Ensure QuoteDeadline column exists in CharterRequests table
+                await EnsureQuoteDeadlineColumnExistsAsync(cancellationToken);
+                
+                // Ensure Email column exists in CharterRequests table
+                await EnsureEmailColumnExistsAsync(cancellationToken);
                 
                 // Check if old schema exists and migration is needed
                 var oldSchemaExists = await CheckTableExistsAsync("Providers", cancellationToken);
@@ -111,11 +126,27 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
         try
         {
             // Use INFORMATION_SCHEMA to check if table exists (more reliable and doesn't throw errors)
-            var tableExists = await _dbContext.Database.SqlQueryRaw<int>(
-                $"SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName}'"
-            ).FirstOrDefaultAsync(cancellationToken);
-            
-            return tableExists > 0;
+            // Use direct database connection to execute scalar query
+            var connection = _dbContext.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = $"SELECT CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName}') THEN 1 ELSE 0 END";
+                var exists = await command.ExecuteScalarAsync(cancellationToken);
+                return exists != null && Convert.ToInt32(exists) == 1;
+            }
+            finally
+            {
+                if (!wasOpen)
+                {
+                    await connection.CloseAsync();
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -235,6 +266,82 @@ public class SqlServerDatabaseMigrator : IDatabaseMigrator
         {
             _logger.LogWarning(ex, "Could not check/add RawJsonPayload column: {Error}", ex.Message);
             // Don't throw - this is not critical
+        }
+    }
+
+    private async Task EnsureQuoteDeadlineColumnExistsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tableExists = await CheckTableExistsAsync("CharterRequests", cancellationToken);
+            if (!tableExists)
+            {
+                _logger.LogDebug("CharterRequests table does not exist, skipping QuoteDeadline column check.");
+                return;
+            }
+
+            _logger.LogInformation("Checking for QuoteDeadline column in CharterRequests table...");
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (
+                        SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_NAME = 'CharterRequests' AND COLUMN_NAME = 'QuoteDeadline'
+                    )
+                    BEGIN
+                        ALTER TABLE CharterRequests 
+                        ADD QuoteDeadline DATETIME2 NULL
+                        PRINT 'QuoteDeadline column added successfully.'
+                    END
+                ", cancellationToken);
+                _logger.LogInformation("QuoteDeadline column check completed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not add QuoteDeadline column (it may already exist): {Error}", ex.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check/add QuoteDeadline column: {Error}", ex.Message);
+        }
+    }
+
+    private async Task EnsureEmailColumnExistsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tableExists = await CheckTableExistsAsync("CharterRequests", cancellationToken);
+            if (!tableExists)
+            {
+                _logger.LogDebug("CharterRequests table does not exist, skipping Email column check.");
+                return;
+            }
+
+            _logger.LogInformation("Checking for Email column in CharterRequests table...");
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (
+                        SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_NAME = 'CharterRequests' AND COLUMN_NAME = 'Email'
+                    )
+                    BEGIN
+                        ALTER TABLE CharterRequests 
+                        ADD Email NVARCHAR(MAX) NULL
+                        PRINT 'Email column added successfully.'
+                    END
+                ", cancellationToken);
+                _logger.LogInformation("Email column check completed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not add Email column (it may already exist): {Error}", ex.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check/add Email column: {Error}", ex.Message);
         }
     }
 

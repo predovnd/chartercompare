@@ -1,80 +1,92 @@
 using CharterCompare.Application.MediatR;
-using CharterCompare.Application.Requests.Admin;
+using CharterCompare.Application.Requests.Requester;
 using CharterCompare.Application.Storage;
+using CharterCompare.Application.Requests.Provider;
 using Microsoft.Extensions.Logging;
 
-namespace CharterCompare.Application.Handlers.Admin;
+namespace CharterCompare.Application.Handlers.Requester;
 
-public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, GetAdminRequestsResponse>
+public class GetRequestBySessionIdHandler : IRequestHandler<GetRequestBySessionIdQuery, GetRequestBySessionIdResponse>
 {
     private readonly IStorage _storage;
-    private readonly ILogger<GetAdminRequestsHandler> _logger;
+    private readonly ILogger<GetRequestBySessionIdHandler> _logger;
 
-    public GetAdminRequestsHandler(IStorage storage, ILogger<GetAdminRequestsHandler> logger)
+    public GetRequestBySessionIdHandler(IStorage storage, ILogger<GetRequestBySessionIdHandler> logger)
     {
         _storage = storage;
         _logger = logger;
     }
 
-    public async Task<GetAdminRequestsResponse> Handle(GetAdminRequestsQuery request, CancellationToken cancellationToken)
+    public async Task<GetRequestBySessionIdResponse> Handle(GetRequestBySessionIdQuery request, CancellationToken cancellationToken)
     {
-        var requests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
-        
-        var requestDtos = requests.Select(r => new AdminRequestDto
+        var allRequests = await _storage.GetAllCharterRequestsAsync(cancellationToken);
+        var charterRequest = allRequests.FirstOrDefault(r => r.SessionId == request.SessionId);
+
+        if (charterRequest == null)
         {
-            Id = r.Id,
-            SessionId = r.SessionId,
-            RequestData = MapCharterRequest(r.RequestData),
-            RawJsonPayload = r.RawJsonPayload,
-            Status = r.Status.ToString(),
-            CreatedAt = r.CreatedAt,
-            RequesterId = r.RequesterId,
-            RequesterEmail = r.Requester?.Email ?? r.Email, // Use stored email if no authenticated requester
-            RequesterName = r.Requester?.Name,
-            QuoteCount = r.Quotes.Count,
-            HasLowConfidence = (r.RequestData.Trip.PickupLocation.Confidence == "low" || 
-                               r.RequestData.Trip.Destination.Confidence == "low"),
-            Quotes = r.Quotes.Select(q => new AdminQuoteDto
+            return new GetRequestBySessionIdResponse();
+        }
+
+        var hoursRemaining = 0;
+        var isDeadlinePassed = false;
+        if (charterRequest.QuoteDeadline.HasValue)
+        {
+            var timeRemaining = charterRequest.QuoteDeadline.Value - DateTime.UtcNow;
+            hoursRemaining = Math.Max(0, (int)timeRemaining.TotalHours);
+            isDeadlinePassed = timeRemaining <= TimeSpan.Zero;
+        }
+
+        var requestDto = new RequestBySessionIdDto
+        {
+            Id = charterRequest.Id,
+            SessionId = charterRequest.SessionId,
+            RequestData = MapCharterRequest(charterRequest.RequestData),
+            Status = charterRequest.Status.ToString(),
+            CreatedAt = charterRequest.CreatedAt,
+            QuoteDeadline = charterRequest.QuoteDeadline,
+            QuoteCount = charterRequest.Quotes.Count,
+            IsDeadlinePassed = isDeadlinePassed,
+            HoursRemaining = hoursRemaining,
+            Quotes = charterRequest.Quotes.Select(q => new RequesterQuoteDto
             {
                 Id = q.Id,
                 ProviderName = q.Provider?.Name ?? "Unknown",
-                ProviderEmail = q.Provider?.Email ?? "",
                 Price = q.Price,
                 Currency = q.Currency,
                 Notes = q.Notes,
                 Status = q.Status.ToString(),
                 CreatedAt = q.CreatedAt
-            }).ToList()
-        }).ToList();
+            }).OrderBy(q => q.Price).ToList()
+        };
 
-        return new GetAdminRequestsResponse
+        return new GetRequestBySessionIdResponse
         {
-            Requests = requestDtos
+            Request = requestDto
         };
     }
 
-    private CharterRequestDto MapCharterRequest(Domain.Entities.CharterRequest request)
+    private Requests.Provider.CharterRequestDto MapCharterRequest(Domain.Entities.CharterRequest request)
     {
-        return new CharterRequestDto
+        return new Requests.Provider.CharterRequestDto
         {
-            Customer = new CustomerInfoDto
+            Customer = new Requests.Provider.CustomerInfoDto
             {
                 FirstName = request.Customer.FirstName,
                 LastName = request.Customer.LastName,
                 Phone = request.Customer.Phone,
                 Email = request.Customer.Email
             },
-            Trip = new TripInfoDto
+            Trip = new Requests.Provider.TripInfoDto
             {
                 Type = request.Trip.Type,
                 PassengerCount = request.Trip.PassengerCount,
-                Date = new DateInfoDto
+                Date = new Requests.Provider.DateInfoDto
                 {
                     RawInput = request.Trip.Date.RawInput,
                     ResolvedDate = request.Trip.Date.ResolvedDate,
                     Confidence = request.Trip.Date.Confidence
                 },
-                PickupLocation = new LocationInfoDto
+                PickupLocation = new Requests.Provider.LocationInfoDto
                 {
                     RawInput = request.Trip.PickupLocation.RawInput,
                     ResolvedName = request.Trip.PickupLocation.ResolvedName,
@@ -84,7 +96,7 @@ public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, Ge
                     Lng = request.Trip.PickupLocation.Lng,
                     Confidence = request.Trip.PickupLocation.Confidence
                 },
-                Destination = new LocationInfoDto
+                Destination = new Requests.Provider.LocationInfoDto
                 {
                     RawInput = request.Trip.Destination.RawInput,
                     ResolvedName = request.Trip.Destination.ResolvedName,
@@ -95,7 +107,7 @@ public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, Ge
                     Confidence = request.Trip.Destination.Confidence
                 },
                 TripFormat = request.Trip.TripFormat,
-                Timing = new TimingInfoDto
+                Timing = new Requests.Provider.TimingInfoDto
                 {
                     RawInput = request.Trip.Timing.RawInput,
                     PickupTime = request.Trip.Timing.PickupTime,
@@ -103,7 +115,7 @@ public class GetAdminRequestsHandler : IRequestHandler<GetAdminRequestsQuery, Ge
                 },
                 SpecialRequirements = request.Trip.SpecialRequirements
             },
-            Meta = new RequestMetaDto
+            Meta = new Requests.Provider.RequestMetaDto
             {
                 Source = request.Meta.Source,
                 CreatedAt = request.Meta.CreatedAt

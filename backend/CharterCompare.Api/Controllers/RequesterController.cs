@@ -19,6 +19,29 @@ public class RequesterController : ControllerBase
         _logger = logger;
     }
 
+    [AllowAnonymous]
+    [HttpGet("requests/session/{sessionId}")]
+    public async Task<ActionResult> GetRequestBySessionId(string sessionId)
+    {
+        try
+        {
+            var query = new GetRequestBySessionIdQuery { SessionId = sessionId };
+            var response = await _mediator.Send(query);
+            
+            if (response.Request == null)
+            {
+                return NotFound(new { error = "Request not found" });
+            }
+            
+            return Ok(response.Request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching request by session ID");
+            return StatusCode(500, new { error = "Failed to fetch request" });
+        }
+    }
+
     [HttpGet("requests")]
     public async Task<ActionResult> GetMyRequests()
     {

@@ -15,6 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '../ui/accordion';
+import { QuoteStatus } from '../QuoteStatus';
 
 export function ChatWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -134,6 +135,11 @@ export function ChatWidget() {
         <div className="flex-1 min-h-0">
           <ChatMessageList messages={messages} isTyping={isTyping} />
         </div>
+        {isComplete && sessionId && (
+          <div className="mt-4">
+            <QuoteStatus sessionId={sessionId} />
+          </div>
+        )}
         {isComplete && finalPayload && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

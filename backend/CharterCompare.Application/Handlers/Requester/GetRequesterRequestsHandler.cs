@@ -22,14 +22,46 @@ public class GetRequesterRequestsHandler : IRequestHandler<GetRequesterRequestsQ
     public async Task<GetRequesterRequestsResponse> Handle(GetRequesterRequestsQuery request, CancellationToken cancellationToken)
     {
         var httpContext = _httpContextAccessor.HttpContext;
-        var requesterIdClaim = httpContext?.User.FindFirst("RequesterId")?.Value;
+        int? requesterId = null;
         
-        if (string.IsNullOrEmpty(requesterIdClaim) || !int.TryParse(requesterIdClaim, out var requesterId))
+        // Try RequesterId claim first (for legacy requesters)
+        var requesterIdClaim = httpContext?.User.FindFirst("RequesterId")?.Value;
+        if (!string.IsNullOrEmpty(requesterIdClaim) && int.TryParse(requesterIdClaim, out var parsedRequesterId))
         {
+            requesterId = parsedRequesterId;
+            _logger.LogInformation("Found RequesterId from RequesterId claim: {RequesterId}", requesterId);
+        }
+        
+        // Also try UserId claim and verify user is a requester (for unified user model)
+        if (requesterId == null)
+        {
+            var userIdClaim = httpContext?.User.FindFirst("UserId")?.Value;
+            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var parsedUserId))
+            {
+                // Verify this user is a requester
+                var user = await _storage.GetUserByIdAsync(parsedUserId, cancellationToken);
+                if (user != null && user.Role == Domain.Enums.UserRole.Requester)
+                {
+                    requesterId = parsedUserId;
+                    _logger.LogInformation("Found RequesterId from UserId claim (user is requester): {RequesterId}", requesterId);
+                }
+                else
+                {
+                    _logger.LogWarning("UserId {UserId} is not a requester (Role: {Role})", parsedUserId, user?.Role);
+                }
+            }
+        }
+        
+        if (requesterId == null)
+        {
+            _logger.LogWarning("Could not determine RequesterId from claims. User authenticated: {IsAuthenticated}", 
+                httpContext?.User?.Identity?.IsAuthenticated ?? false);
             return new GetRequesterRequestsResponse();
         }
 
-        var requests = await _storage.GetRequesterCharterRequestsAsync(requesterId, cancellationToken);
+        _logger.LogInformation("Fetching requests for RequesterId: {RequesterId}", requesterId);
+        var requests = await _storage.GetRequesterCharterRequestsAsync(requesterId.Value, cancellationToken);
+        _logger.LogInformation("Found {Count} requests for RequesterId: {RequesterId}", requests.Count, requesterId);
         
         var requestDtos = requests.Select(r => new RequesterRequestDto
         {
@@ -38,17 +70,20 @@ public class GetRequesterRequestsHandler : IRequestHandler<GetRequesterRequestsQ
             RequestData = MapCharterRequest(r.RequestData),
             Status = r.Status.ToString(),
             CreatedAt = r.CreatedAt,
-            Quotes = r.Quotes.Select(q => new QuoteDto
-            {
-                Id = q.Id,
-                OperatorName = q.Provider.Name,
-                OperatorEmail = q.Provider.Email,
-                Price = q.Price,
-                Currency = q.Currency,
-                Notes = q.Notes,
-                Status = q.Status.ToString(),
-                CreatedAt = q.CreatedAt
-            }).ToList()
+            Quotes = r.Quotes
+                .Select(q => new QuoteDto
+                {
+                    Id = q.Id,
+                    OperatorName = q.Provider.Name,
+                    OperatorEmail = q.Provider.Email,
+                    Price = q.Price,
+                    Currency = q.Currency,
+                    Notes = q.Notes,
+                    Status = q.Status.ToString(),
+                    CreatedAt = q.CreatedAt
+                })
+                .OrderBy(q => q.Price) // Sort by price (cheapest first)
+                .ToList()
         }).ToList();
 
         return new GetRequesterRequestsResponse

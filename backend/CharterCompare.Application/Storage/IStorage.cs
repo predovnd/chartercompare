@@ -33,6 +33,7 @@ public interface IStorage
     Task<List<CharterRequestRecord>> GetAllCharterRequestsAsync(CancellationToken cancellationToken = default);
     Task<List<CharterRequestRecord>> GetOpenCharterRequestsAsync(CancellationToken cancellationToken = default);
     Task<List<CharterRequestRecord>> GetRequesterCharterRequestsAsync(int requesterId, CancellationToken cancellationToken = default);
+    Task<List<CharterRequestRecord>> GetUnlinkedRequestsByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     // Quote operations
     Task<Quote?> GetQuoteByIdAsync(int quoteId, CancellationToken cancellationToken = default);

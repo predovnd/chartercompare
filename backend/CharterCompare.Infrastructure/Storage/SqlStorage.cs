@@ -169,6 +169,14 @@ public class SqlStorage : IStorage
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<CharterRequestRecord>> GetUnlinkedRequestsByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.CharterRequests
+            .Where(r => r.RequesterId == null && r.Email == email)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
     // Quote operations
     public async Task<Quote?> GetQuoteByIdAsync(int quoteId, CancellationToken cancellationToken = default)
     {

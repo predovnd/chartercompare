@@ -63,6 +63,32 @@ public class RequesterLoginHandler : IRequestHandler<RequesterLoginCommand, Requ
         await _storage.UpdateUserAsync(user, cancellationToken);
         await _storage.SaveChangesAsync(cancellationToken);
 
+        // Link any anonymous requests with matching email to this user account
+        try
+        {
+            var unlinkedRequests = await _storage.GetUnlinkedRequestsByEmailAsync(user.Email, cancellationToken);
+            if (unlinkedRequests.Any())
+            {
+                _logger.LogInformation("Found {Count} unlinked requests for email {Email}, linking to requester {RequesterId}", 
+                    unlinkedRequests.Count, user.Email, user.Id);
+                
+                foreach (var unlinkedRequest in unlinkedRequests)
+                {
+                    unlinkedRequest.RequesterId = user.Id;
+                    await _storage.UpdateCharterRequestAsync(unlinkedRequest, cancellationToken);
+                }
+                
+                await _storage.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation("Successfully linked {Count} requests to requester {RequesterId}", 
+                    unlinkedRequests.Count, user.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error linking anonymous requests to requester {RequesterId}", user.Id);
+            // Don't fail login if linking fails
+        }
+
         _logger.LogInformation("Requester logged in: {Email}", request.Email);
 
         return new RequesterLoginResponse

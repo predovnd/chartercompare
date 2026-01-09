@@ -52,8 +52,17 @@ builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<Ch
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Auth.CreateAdminCommand, CharterCompare.Application.Requests.Auth.CreateAdminResponse>, CharterCompare.Application.Handlers.Auth.CreateAdminHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Provider.GetProviderRequestsQuery, CharterCompare.Application.Requests.Provider.GetProviderRequestsResponse>, CharterCompare.Application.Handlers.Provider.GetProviderRequestsHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Provider.GetProviderQuotesQuery, CharterCompare.Application.Requests.Provider.GetProviderQuotesResponse>, CharterCompare.Application.Handlers.Provider.GetProviderQuotesHandler>();
+builder.Services.AddScoped<CharterCompare.Application.Services.IEmailService, CharterCompare.Application.Services.SmtpEmailService>();
+builder.Services.AddScoped<CharterCompare.Application.Services.INotificationService>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<CharterCompare.Application.Services.NotificationService>>();
+    var emailService = sp.GetRequiredService<CharterCompare.Application.Services.IEmailService>();
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    return new CharterCompare.Application.Services.NotificationService(logger, emailService, configuration);
+});
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Provider.SubmitQuoteCommand, CharterCompare.Application.Requests.Provider.SubmitQuoteResponse>, CharterCompare.Application.Handlers.Provider.SubmitQuoteHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Requester.GetRequesterRequestsQuery, CharterCompare.Application.Requests.Requester.GetRequesterRequestsResponse>, CharterCompare.Application.Handlers.Requester.GetRequesterRequestsHandler>();
+builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Requester.GetRequestBySessionIdQuery, CharterCompare.Application.Requests.Requester.GetRequestBySessionIdResponse>, CharterCompare.Application.Handlers.Requester.GetRequestBySessionIdHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminStatsQuery, CharterCompare.Application.Requests.Admin.GetAdminStatsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminStatsHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminUsersQuery, CharterCompare.Application.Requests.Admin.GetAdminUsersResponse>, CharterCompare.Application.Handlers.Admin.GetAdminUsersHandler>();
 builder.Services.AddScoped<CharterCompare.Application.MediatR.IRequestHandler<CharterCompare.Application.Requests.Admin.GetAdminRequestsQuery, CharterCompare.Application.Requests.Admin.GetAdminRequestsResponse>, CharterCompare.Application.Handlers.Admin.GetAdminRequestsHandler>();
@@ -178,6 +187,32 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
                         await storage.UpdateUserAsync(user);
                         await storage.SaveChangesAsync();
                         logger.LogInformation("Updated existing requester: {UserId}", user.Id);
+                    }
+
+                    // Link any anonymous requests with matching email to this user account
+                    try
+                    {
+                        var unlinkedRequests = await storage.GetUnlinkedRequestsByEmailAsync(user.Email, CancellationToken.None);
+                        if (unlinkedRequests.Any())
+                        {
+                            logger.LogInformation("Found {Count} unlinked requests for email {Email}, linking to requester {RequesterId}", 
+                                unlinkedRequests.Count, user.Email, user.Id);
+                            
+                            foreach (var unlinkedRequest in unlinkedRequests)
+                            {
+                                unlinkedRequest.RequesterId = user.Id;
+                                await storage.UpdateCharterRequestAsync(unlinkedRequest, CancellationToken.None);
+                            }
+                            
+                            await storage.SaveChangesAsync(CancellationToken.None);
+                            logger.LogInformation("Successfully linked {Count} requests to requester {RequesterId}", 
+                                unlinkedRequests.Count, user.Id);
+                        }
+                    }
+                    catch (Exception linkEx)
+                    {
+                        logger.LogWarning(linkEx, "Error linking anonymous requests to requester {RequesterId}", user.Id);
+                        // Don't fail login if linking fails
                     }
 
                     var sessionClaims = new List<Claim>

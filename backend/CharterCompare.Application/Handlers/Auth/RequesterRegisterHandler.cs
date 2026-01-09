@@ -67,6 +67,32 @@ public class RequesterRegisterHandler : IRequestHandler<RequesterRegisterCommand
         
         await _storage.SaveChangesAsync(cancellationToken);
 
+        // Link any anonymous requests with matching email to this new user account
+        try
+        {
+            var unlinkedRequests = await _storage.GetUnlinkedRequestsByEmailAsync(user.Email, cancellationToken);
+            if (unlinkedRequests.Any())
+            {
+                _logger.LogInformation("Found {Count} unlinked requests for email {Email}, linking to new requester {RequesterId}", 
+                    unlinkedRequests.Count, user.Email, user.Id);
+                
+                foreach (var unlinkedRequest in unlinkedRequests)
+                {
+                    unlinkedRequest.RequesterId = user.Id;
+                    await _storage.UpdateCharterRequestAsync(unlinkedRequest, cancellationToken);
+                }
+                
+                await _storage.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation("Successfully linked {Count} requests to new requester {RequesterId}", 
+                    unlinkedRequests.Count, user.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error linking anonymous requests to new requester {RequesterId}", user.Id);
+            // Don't fail registration if linking fails
+        }
+
         _logger.LogInformation("New requester registered: {Email}", request.Email);
 
         return new RequesterRegisterResponse

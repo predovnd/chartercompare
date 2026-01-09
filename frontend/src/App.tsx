@@ -6,6 +6,7 @@ import { AdminLogin } from './pages/AdminLogin';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { RequesterLogin } from './pages/RequesterLogin';
 import { RequesterDashboard } from './pages/RequesterDashboard';
+import { ViewQuotes } from './pages/ViewQuotes';
 
 function App() {
   return (
@@ -18,6 +19,8 @@ function App() {
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/requester/login" element={<RequesterLogin />} />
         <Route path="/requester/dashboard" element={<RequesterDashboard />} />
+        <Route path="/quotes" element={<ViewQuotes />} />
+        <Route path="/quotes/:sessionId" element={<ViewQuotes />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
