@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { LogOut, Bus, FileText, DollarSign, Calendar, Users, MapPin, User, Award, TrendingDown, Star, CheckCircle2 } from 'lucide-react';
+import { LogOut, Bus, FileText, DollarSign, Calendar, MapPin, User, Award, TrendingDown, Star } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -297,7 +297,7 @@ export function RequesterDashboard() {
                         </div>
                         
                         <div className="space-y-3">
-                          {processedQuotes.map((quote, index) => (
+                          {processedQuotes.map((quote) => (
                             <Card 
                               key={quote.id} 
                               className={`relative overflow-hidden transition-all ${

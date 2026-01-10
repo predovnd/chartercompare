@@ -42,7 +42,7 @@ export function AdminLogin() {
         return;
       }
 
-      const data = await response.json();
+      await response.json();
       navigate('/admin/dashboard');
     } catch (err) {
       const errorMessage = err instanceof Error 

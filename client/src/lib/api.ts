@@ -1,4 +1,4 @@
-import type { ChatMessage, CharterRequest } from '@/types';
+import type { CharterRequest } from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 

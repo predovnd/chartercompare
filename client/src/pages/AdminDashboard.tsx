@@ -424,17 +424,6 @@ export function AdminDashboard() {
     }
   };
 
-  const getAttributeBadgeColor = (attribute: string) => {
-    if (OPERATOR_ATTRIBUTES.includes(attribute)) {
-      return 'bg-blue-100 text-blue-800';
-    } else if (attribute === 'Individual') {
-      return 'bg-green-100 text-green-800';
-    } else if (attribute === 'Business') {
-      return 'bg-purple-100 text-purple-800';
-    }
-    return 'bg-gray-100 text-gray-800';
-  };
-
   const getAttributeBadgeStyle = (attribute: string) => {
     if (OPERATOR_ATTRIBUTES.includes(attribute)) {
       return 'border-blue-300 text-blue-700 bg-blue-50';
@@ -471,7 +460,7 @@ export function AdminDashboard() {
     const words = name.split(/[\s,]+/);
     const abbreviations = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT', 'St', 'Ave', 'Rd', 'Dr'];
     
-    return words.map((word, index) => {
+    return words.map((word) => {
       const upperWord = word.toUpperCase();
       // Keep abbreviations as uppercase
       if (abbreviations.includes(upperWord)) {
@@ -914,7 +903,6 @@ export function AdminDashboard() {
                     const destinationConfidence = destination?.confidence || 'low';
                     const hasLowConfidence = request.hasLowConfidence || pickupConfidence === 'low' || destinationConfidence === 'low';
                     const isDraft = request.status === 'Draft' || request.status === 'UnderReview';
-                    const isPublished = request.status === 'Published';
                     
                     const toggleJson = () => {
                       const newSet = new Set(expandedJsonRequests);

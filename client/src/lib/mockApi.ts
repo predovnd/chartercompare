@@ -172,25 +172,32 @@ export async function sendMessage(
   let isComplete = false;
   let finalPayload: CharterRequest | undefined;
   let icon: string | undefined;
-  let isError = false;
 
   switch (state.step) {
-    case 'tripType':
-      newState.data.trip = { ...newState.data.trip, type: text.trim() };
+    case 'tripType': {
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = { 
+        ...currentTrip, 
+        type: text.trim()
+      };
       newState.step = 'passengerCount';
       replyText = "About how many passengers will be travelling?";
       icon = getIconForStep('passengerCount');
       break;
+    }
 
     case 'passengerCount': {
       const count = parsePassengerCount(text);
       if (count === null || count <= 0) {
         replyText = "I need a number — about how many passengers will be travelling?";
         icon = getIconForStep('passengerCount', true);
-        isError = true;
         break;
       }
-      newState.data.trip = { ...newState.data.trip, passengerCount: count };
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = { 
+        ...currentTrip, 
+        passengerCount: count
+      };
       newState.step = 'date';
       replyText = "What date is the trip? We're just booking single-day trips at the moment.";
       icon = getIconForStep('date');
@@ -220,8 +227,9 @@ export async function sendMessage(
         break;
       }
       const dateParse = parseDate(text);
-      newState.data.trip = {
-        ...newState.data.trip,
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = {
+        ...currentTrip,
         date: {
           rawInput: text.trim(),
           resolvedDate: dateParse.resolvedDate,
@@ -235,8 +243,9 @@ export async function sendMessage(
     }
 
     case 'pickup': {
-      newState.data.trip = {
-        ...newState.data.trip,
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = {
+        ...currentTrip,
         pickupLocation: {
           rawInput: text.trim(),
           resolvedName: '',
@@ -244,7 +253,7 @@ export async function sendMessage(
           state: '',
           lat: null,
           lng: null,
-          confidence: 'low',
+          confidence: 'low' as const,
         },
       };
       newState.step = 'destination';
@@ -254,8 +263,9 @@ export async function sendMessage(
     }
 
     case 'destination': {
-      newState.data.trip = {
-        ...newState.data.trip,
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = {
+        ...currentTrip,
         destination: {
           rawInput: text.trim(),
           resolvedName: '',
@@ -263,7 +273,7 @@ export async function sendMessage(
           state: '',
           lat: null,
           lng: null,
-          confidence: 'low',
+          confidence: 'low' as const,
         },
       };
       newState.step = 'tripFormat';
@@ -277,10 +287,13 @@ export async function sendMessage(
       if (format === 'unclear') {
         replyText = "Just to confirm — one-way, or return on the same day?";
         icon = getIconForStep('tripFormat', true);
-        isError = true;
         break;
       }
-      newState.data.trip = { ...newState.data.trip, tripFormat: format };
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = { 
+        ...currentTrip, 
+        tripFormat: format
+      };
       newState.step = 'timing';
       replyText = "Do you have rough pickup and return times?";
       icon = getIconForStep('timing');
@@ -288,8 +301,9 @@ export async function sendMessage(
     }
 
     case 'timing': {
-      newState.data.trip = {
-        ...newState.data.trip,
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = {
+        ...currentTrip,
         timing: {
           rawInput: text.trim(),
           pickupTime: '',
@@ -304,7 +318,11 @@ export async function sendMessage(
 
     case 'requirements': {
       const requirements = parseRequirements(text);
-      newState.data.trip = { ...newState.data.trip, specialRequirements: requirements };
+      const currentTrip = newState.data.trip || {};
+      (newState.data as any).trip = { 
+        ...currentTrip, 
+        specialRequirements: requirements
+      };
       newState.step = 'email';
       replyText = "What's the best email address to send the comparison results to?";
       icon = getIconForStep('email');
@@ -315,17 +333,20 @@ export async function sendMessage(
       if (!isValidEmail(text.trim())) {
         replyText = "That doesn't look like a valid email — what's the best email to send the results to?";
         icon = getIconForStep('email', true);
-        isError = true;
         break;
       }
-      newState.data.customer = { ...newState.data.customer, email: text.trim() };
+      const currentCustomer = newState.data.customer || {};
+      (newState.data as any).customer = { 
+        ...currentCustomer, 
+        email: text.trim() 
+      };
       newState.step = 'complete';
       replyText = "Great — I've got everything I need. I'll pass this through now and someone will be in touch shortly with the best available options.";
       isComplete = true;
       icon = getIconForStep('complete');
 
-      // Build final payload
-      const trip = newState.data.trip!;
+      // Build final payload - ensure all required fields are present with correct types
+      const trip = newState.data.trip;
       finalPayload = {
         customer: {
           firstName: newState.data.customer?.firstName || '',
@@ -334,30 +355,54 @@ export async function sendMessage(
           email: newState.data.customer?.email || '',
         },
         trip: {
-          type: trip.type || '',
-          passengerCount: trip.passengerCount || 0,
-          date: trip.date || { rawInput: '', resolvedDate: '', confidence: 'low' },
-          pickupLocation: trip.pickupLocation || {
+          type: trip?.type || '',
+          passengerCount: trip?.passengerCount || 0,
+          date: trip?.date ? {
+            rawInput: trip.date.rawInput,
+            resolvedDate: trip.date.resolvedDate,
+            confidence: trip.date.confidence,
+          } : {
+            rawInput: '',
+            resolvedDate: '',
+            confidence: 'low' as 'low' | 'medium' | 'high',
+          },
+          pickupLocation: trip?.pickupLocation ? {
+            rawInput: trip.pickupLocation.rawInput,
+            resolvedName: trip.pickupLocation.resolvedName,
+            suburb: trip.pickupLocation.suburb,
+            state: trip.pickupLocation.state,
+            lat: trip.pickupLocation.lat,
+            lng: trip.pickupLocation.lng,
+            confidence: trip.pickupLocation.confidence,
+          } : {
             rawInput: '',
             resolvedName: '',
             suburb: '',
             state: '',
-            lat: null,
-            lng: null,
-            confidence: 'low',
+            lat: null as number | null,
+            lng: null as number | null,
+            confidence: 'low' as 'low' | 'medium',
           },
-          destination: trip.destination || {
+          destination: trip?.destination ? {
+            rawInput: trip.destination.rawInput,
+            resolvedName: trip.destination.resolvedName,
+            suburb: trip.destination.suburb,
+            state: trip.destination.state,
+            lat: trip.destination.lat,
+            lng: trip.destination.lng,
+            confidence: trip.destination.confidence,
+          } : {
             rawInput: '',
             resolvedName: '',
             suburb: '',
             state: '',
-            lat: null,
-            lng: null,
-            confidence: 'low',
+            lat: null as number | null,
+            lng: null as number | null,
+            confidence: 'low' as 'low' | 'medium',
           },
-          tripFormat: trip.tripFormat || 'one_way',
-          timing: trip.timing || { rawInput: '', pickupTime: '', returnTime: '' },
-          specialRequirements: trip.specialRequirements || [],
+          tripFormat: (trip?.tripFormat || 'one_way') as 'one_way' | 'return_same_day',
+          timing: trip?.timing || { rawInput: '', pickupTime: '', returnTime: '' },
+          specialRequirements: trip?.specialRequirements || [],
         },
         meta: {
           source: 'webchat',
