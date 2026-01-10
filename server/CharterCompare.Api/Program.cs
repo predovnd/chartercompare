@@ -340,7 +340,14 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Serve static files from wwwroot (for React app)
+app.UseStaticFiles();
+
 app.UseHttpsRedirection();
 app.MapControllers();
+
+// SPA fallback - serve index.html for routes that don't match API routes
+// This must be AFTER MapControllers() so API routes are checked first
+app.MapFallbackToFile("index.html");
 
 app.Run();

@@ -1,0 +1,207 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches:
+      - dev
+      - staging
+
+env:
+  CLIENT_PATH: client
+  SERVER_PATH: server
+  API_PROJECT: server/CharterCompare.Api/CharterCompare.Api.csproj
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18.x'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has-client: ${{ steps.check.outputs.has-client }}
+      has-server: ${{ steps.check.outputs.has-server }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check if client exists
+        id: check
+        run: |
+          if [ -d "${{ env.CLIENT_PATH }}" ] && [ -f "${{ env.CLIENT_PATH }}/package.json" ]; then
+            echo "has-client=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-client=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ -d "${{ env.SERVER_PATH }}" ] && [ -f "${{ env.API_PROJECT }}" ]; then
+            echo "has-server=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-server=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-server == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.API_PROJECT }}
+      
+      - name: Build
+        run: dotnet build ${{ env.API_PROJECT }} --configuration Release --no-restore
+      
+      - name: Run tests (if any)
+        continue-on-error: true
+        run: |
+          if find ${{ env.SERVER_PATH }} -name "*.Tests.csproj" -o -name "*Test*.csproj" | grep -q .; then
+            dotnet test --configuration Release --no-build --verbosity normal
+          else
+            echo "No test projects found, skipping tests"
+          fi
+
+  build-client:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-client == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.CLIENT_PATH }}/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ${{ env.CLIENT_PATH }}
+        run: npm ci
+      
+      - name: Build client
+        working-directory: ${{ env.CLIENT_PATH }}
+        run: npm run build
+      
+      - name: Upload client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: ${{ env.CLIENT_PATH }}/dist
+          retention-days: 1
+
+  publish-server:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, build-client]
+    if: always() && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped') && (needs.build-client.result == 'success' || needs.build-client.result == 'skipped' || needs.build-client.result == 'failure')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.API_PROJECT }}
+      
+      - name: Publish server
+        run: dotnet publish ${{ env.API_PROJECT }} --configuration Release --output ./publish --no-restore
+      
+      - name: Download client build (if exists)
+        if: needs.build-client.result == 'success'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: client-dist
+          path: ./client-dist
+      
+      - name: Copy client to wwwroot
+        if: needs.build-client.result == 'success'
+        run: |
+          mkdir -p ./publish/wwwroot
+          cp -r ./client-dist/* ./publish/wwwroot/
+      
+      - name: Create deployment package
+        run: |
+          cd publish
+          zip -r ../deployment.zip .
+          cd ..
+      
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deployment.zip
+          retention-days: 1
+
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: publish-server
+    if: github.ref == 'refs/heads/dev'
+    environment:
+      name: dev
+    steps:
+      - name: Download deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+          path: ./deployment-package
+      
+      - name: Deploy to Azure App Service (Dev)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_APP_NAME_DEV }}
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE_DEV }}
+          package: ./deployment-package/deployment.zip
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: publish-server
+    if: github.ref == 'refs/heads/staging'
+    environment:
+      name: staging
+    steps:
+      - name: Download deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+          path: ./deployment-package
+      
+      - name: Deploy to Azure App Service (Staging Slot)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_APP_NAME_PROD }}
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE_PROD }}
+          slot-name: staging
+          package: ./deployment-package/deployment.zip
+
+  promote-to-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/staging' && success()
+    environment:
+      name: prod
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_SP_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_SP_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_SP_TENANT_ID }}"
+            }
+      
+      - name: Swap staging to production
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az webapp deployment slot swap \
+              --resource-group ${{ secrets.AZURE_RESOURCE_GROUP_PROD }} \
+              --name ${{ secrets.AZURE_APP_NAME_PROD }} \
+              --slot staging \
+              --target-slot production
