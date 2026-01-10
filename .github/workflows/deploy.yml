@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - dev
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy from (default: dev)'
+        required: false
+        default: 'dev'
+        type: string
 
 env:
   CLIENT_PATH: client
@@ -21,6 +28,8 @@ jobs:
       has-server: ${{ steps.check.outputs.has-server }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
       - name: Check if client exists
         id: check
         run: |
@@ -42,6 +51,8 @@ jobs:
     if: needs.detect-changes.outputs.has-server == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -69,6 +80,8 @@ jobs:
     if: needs.detect-changes.outputs.has-client == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -98,6 +111,8 @@ jobs:
     if: always() && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped') && (needs.build-client.result == 'success' || needs.build-client.result == 'skipped' || needs.build-client.result == 'failure')
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -144,6 +159,8 @@ jobs:
       name: dev
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
