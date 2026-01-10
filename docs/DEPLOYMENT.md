@@ -16,6 +16,10 @@ The pipeline automatically deploys:
 3. Two Azure App Services created:
    - **DEV App Service** (for dev branch deployments)
    - **PROD App Service** (with a staging deployment slot)
+4. Azure SQL databases created for each environment:
+   - **DEV database**: `chartercompare-db-dev` (for dev environment)
+   - **PROD database**: `chartercompare-db-prod` (for production/staging slots)
+   - Use environment-specific database names following the pattern: `chartercompare-db-{env}`
 
 ## Step 1: Create Azure App Services
 
@@ -188,14 +192,23 @@ Then add to GitHub secrets:
 
 ### Connection Strings
 
-Configure your SQL Server connection string in Azure Portal:
+Configure your SQL Server connection string in Azure Portal. **Note:** Azure SQL is configured for Entra-only authentication.
 
 1. Go to App Service → **Configuration** → **Connection strings**
 2. Click **+ New connection string**
 3. Name: `DefaultConnection`
-4. Value: Your SQL Server connection string (e.g., `Server=tcp:yourserver.database.windows.net,1433;Database=CharterCompare;User ID=...;Password=...;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;`)
-5. Type: `SQLAzure` (for Azure SQL) or `SQLServer` (for on-premises)
+4. Value: Your SQL Server connection string with Entra authentication:
+   - For App Service managed identity: `Server=tcp:yourserver.database.windows.net,1433;Database=chartercompare-db-{env};Authentication=Active Directory Default;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;`
+   - Replace `{env}` with your environment suffix (e.g., `dev`, `staging`, `prod`)
+   - Examples: `chartercompare-db-dev`, `chartercompare-db-staging`, `chartercompare-db-prod`
+   - Ensure the App Service managed identity has been granted access to the SQL database
+5. Type: `SQLAzure` (for Azure SQL)
 6. Click **OK** → **Save**
+
+**Important:** 
+- SQL authentication (username/password) is disabled for this deployment
+- The App Service managed identity must be added as a user to the SQL database with appropriate permissions
+- You can assign the managed identity to the database using Azure Portal or T-SQL commands
 
 ### App Settings
 
@@ -292,6 +305,10 @@ az webapp deployment slot swap \
 - Verify connection string is set in Azure App Service Configuration
 - Check that the connection string name matches what's in code (`DefaultConnection`)
 - Ensure SQL Server firewall allows Azure services
+- Verify connection string uses `Authentication=Active Directory Default` (for managed identity)
+- Ensure App Service managed identity has been granted access to the SQL database
+- Check that Entra ID authentication is enabled on the SQL Server (Entra-only mode)
+- Verify the managed identity has appropriate database roles (e.g., db_owner, db_datareader, db_datawriter)
 
 ### Build Fails
 

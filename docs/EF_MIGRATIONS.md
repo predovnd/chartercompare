@@ -297,7 +297,12 @@ Connection strings are configured in:
 
 2. **Production/Staging**: Azure App Service Configuration → Connection Strings
    - Name: `DefaultConnection`
-   - Value: Your SQL Server connection string
+   - Value: Your SQL Server connection string with Entra authentication
+   - **Note:** For Azure deployments, use Entra-only authentication and include environment suffix in database name:
+     - App Service: `Server=tcp:yourserver.database.windows.net,1433;Database=chartercompare-db-{env};Authentication=Active Directory Default;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;`
+     - GitHub Actions: `Server=tcp:yourserver.database.windows.net,1433;Database=chartercompare-db-{env};Authentication=Active Directory Service Principal;User ID=<client-id>@<tenant-id>;Password=<client-secret>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;`
+     - Replace `{env}` with your environment suffix (e.g., `dev`, `staging`, `prod`)
+   - SQL authentication (username/password) is disabled for this deployment
 
 ### Auto-Migration Settings
 
