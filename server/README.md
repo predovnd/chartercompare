@@ -12,7 +12,7 @@ A .NET 8.0 Web API backend for the Charter Compare application.
 ### 1. Navigate to the API project
 
 ```bash
-cd backend/CharterCompare.Api
+cd server/CharterCompare.Api
 ```
 
 ### 2. Restore dependencies
@@ -98,7 +98,7 @@ charter-request_YYYYMMDD_HHMMSS_email_at_domain_com.json
 charter-request_20260108_143022_user_at_example_com.json
 ```
 
-Files are stored in: `backend/CharterCompare.Api/requests/`
+Files are stored in: `server/CharterCompare.Api/requests/`
 
 **Note:** The `requests/` directory and database file are excluded from git via `.gitignore` to prevent committing sensitive customer data.
 

@@ -70,7 +70,7 @@ The system uses SQLite for local development. The database file `chartercompare.
 ## Testing
 
 1. Configure Google OAuth credentials
-2. Start the backend: `dotnet run`
+2. Start the backend: `cd server/CharterCompare.Api && dotnet run`
 3. Navigate to `http://localhost:5173/provider/login`
 4. Click "Sign in with Google"
 5. Complete Google authentication

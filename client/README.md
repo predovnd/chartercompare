@@ -44,7 +44,7 @@ npm run preview
 ## Project Structure
 
 ```
-frontend/
+client/
 ├── src/
 │   ├── components/         # React components
 │   │   ├── chat/           # Chat-related components

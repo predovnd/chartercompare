@@ -8,16 +8,16 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Frontend
-frontend/node_modules
-frontend/dist
-frontend/dist-ssr
-frontend/.vite
-frontend/*.local
+client/node_modules
+client/dist
+client/dist-ssr
+client/.vite
+client/*.local
 
 # Backend
-backend/**/bin
-backend/**/obj
-backend/**/.vs
+server/**/bin
+server/**/obj
+server/**/.vs
 
 # Editor directories and files
 .vscode/*

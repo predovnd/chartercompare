@@ -51,7 +51,7 @@ The frontend should be using: `http://localhost:5000`
 
 **Issue: Connection refused**
 - Backend is not running
-- Start backend: `cd backend/CharterCompare.Api && dotnet run`
+- Start backend: `cd server/CharterCompare.Api && dotnet run`
 
 **Issue: 404 Not Found**
 - Check the API route is correct: `/api/chat/start`

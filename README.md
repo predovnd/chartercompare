@@ -6,12 +6,12 @@ A modern web application for comparing charter bus quotes, built with React + Ty
 
 ```
 chartercompare/
-├── frontend/               # Frontend (React + TypeScript + Vite)
+├── client/                 # Frontend (React + TypeScript + Vite)
 │   ├── src/                # Source code
 │   ├── package.json        # Dependencies
 │   ├── vite.config.ts      # Vite configuration
 │   └── ...
-├── backend/                # Backend (.NET 8.0 Web API)
+├── server/                 # Backend (.NET 8.0 Web API)
 │   ├── CharterCompare.Api/ # API project
 │   ├── CharterCompare.sln  # Solution file
 │   └── README.md           # Backend documentation
@@ -26,13 +26,13 @@ chartercompare/
 ### Installation
 
 ```bash
-cd frontend
+cd client
 npm install
 ```
 
 ### Configuration
 
-Create a `.env` file in the `frontend/` directory:
+Create a `.env` file in the `client/` directory:
 
 ```env
 VITE_API_URL=http://localhost:5000
@@ -41,7 +41,7 @@ VITE_API_URL=http://localhost:5000
 ### Run Development Server
 
 ```bash
-cd frontend
+cd client
 npm run dev
 ```
 
@@ -55,7 +55,7 @@ The frontend will be available at `http://localhost:5173`
 ### Run Backend
 
 ```bash
-cd backend/CharterCompare.Api
+cd server/CharterCompare.Api
 dotnet restore
 dotnet run
 ```
@@ -69,13 +69,13 @@ The API will be available at:
 
 1. **Start the backend** first:
    ```bash
-   cd backend/CharterCompare.Api
+   cd server/CharterCompare.Api
    dotnet run
    ```
 
 2. **Start the frontend** in a separate terminal:
    ```bash
-   cd frontend
+   cd client
    npm run dev
    ```
 
@@ -86,7 +86,7 @@ The API will be available at:
 - `POST /api/chat/start` - Start a new chat session
 - `POST /api/chat/message` - Send a message and get response
 
-See `backend/README.md` for detailed API documentation.
+See `server/README.md` for detailed API documentation.
 
 ## Features
 
