@@ -5,7 +5,7 @@ import { Badge } from '../components/ui/badge';
 import { LogOut, Bus, FileText, DollarSign, Calendar, MapPin, User, Award, TrendingDown, Star } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 interface Requester {
   id: number;

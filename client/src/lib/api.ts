@@ -1,6 +1,7 @@
 import type { CharterRequest } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Use nullish coalescing so empty string is preserved for relative URLs
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 console.log('API_BASE_URL configured as:', API_BASE_URL);
 

@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input';
 import { DollarSign, Clock, CheckCircle, AlertCircle, ArrowLeft, MapPin, Calendar, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 interface Quote {
   id: number;

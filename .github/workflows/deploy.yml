@@ -96,6 +96,11 @@ jobs:
       
       - name: Build client
         working-directory: ${{ env.CLIENT_PATH }}
+        env:
+          # Use empty string for relative URLs when frontend and backend are on same domain
+          # This makes API calls relative to the current domain (Azure App Service URL)
+          # Empty string is preserved in code using nullish coalescing (??) instead of logical OR (||)
+          VITE_API_URL: ''
         run: npm run build
       
       - name: Upload client build

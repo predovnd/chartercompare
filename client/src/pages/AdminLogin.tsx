@@ -6,7 +6,7 @@ import { Label } from '../components/ui/label';
 import { Bus, Mail, Lock, Shield, ArrowLeft } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 export function AdminLogin() {
   const [email, setEmail] = useState('');

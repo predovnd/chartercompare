@@ -8,7 +8,7 @@ import { CoverageMap } from '../components/CoverageMap';
 import { LocationEditor } from '../components/LocationEditor';
 import { useNavigate, Link } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 interface Stats {
   totalOperators: number;

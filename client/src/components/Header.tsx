@@ -3,7 +3,7 @@ import { Bus, User, LogOut } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from './ui/button';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 interface UserInfo {
   id: number;
