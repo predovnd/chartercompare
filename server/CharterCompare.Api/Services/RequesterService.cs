@@ -1,4 +1,4 @@
-using CharterCompare.Api.Data;
+using CharterCompare.Infrastructure.Data;
 using CharterCompare.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using BCrypt.Net;

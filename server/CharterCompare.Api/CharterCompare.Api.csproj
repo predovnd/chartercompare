@@ -7,9 +7,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Exclude legacy services that reference old Providers/Requesters DbSets -->
+    <Compile Remove="Services\ProviderService.cs" />
+    <Compile Remove="Services\RequesterService.cs" />
+    <Compile Remove="Services\IProviderService.cs" />
+    <Compile Remove="Services\IRequesterService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\CharterCompare.Application\CharterCompare.Application.csproj" />
     <ProjectReference Include="..\CharterCompare.Infrastructure\CharterCompare.Infrastructure.csproj" />
     <ProjectReference Include="..\CharterCompare.Domain\CharterCompare.Domain.csproj" />
+    <!-- Reference migrations project for runtime migrations (Database.MigrateAsync()) -->
+    <!-- Design-time operations use the migrations project directly via -p parameter -->
+    <ProjectReference Include="..\CharterCompare.Migrations\CharterCompare.Migrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>

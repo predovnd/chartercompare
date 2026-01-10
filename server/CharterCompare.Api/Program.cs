@@ -19,16 +19,21 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 
 // Add database - use Infrastructure DbContext
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Server=(localdb)\\mssqllocaldb;Database=CharterCompare;Trusted_Connection=true;TrustServerCertificate=true;MultipleActiveResultSets=true";
+// Migrations are stored in CharterCompare.Migrations project to decouple from web host
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' is not configured. " +
+        "Please set it in appsettings.json or via environment variable 'ConnectionStrings__DefaultConnection'.");
+}
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(
+        connectionString,
+        sqlServerOptions => sqlServerOptions.MigrationsAssembly("CharterCompare.Migrations")));
 
 // Register Storage (Infrastructure)
 builder.Services.AddScoped<IStorage, SqlStorage>();
-
-// Register Database Migrator (Infrastructure)
-builder.Services.AddScoped<CharterCompare.Infrastructure.Migrations.IDatabaseMigrator, CharterCompare.Infrastructure.Migrations.SqlServerDatabaseMigrator>();
 
 // Register Geocoding Service
 builder.Services.AddHttpClient<CharterCompare.Application.Services.NominatimGeocodingService>();
@@ -282,34 +287,73 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
 
 var app = builder.Build();
 
-// Ensure database is created and migrated
-using (var scope = app.Services.CreateScope())
+// Apply EF Core migrations on startup
+// SKIP during EF Core design-time operations (migrations add/remove) - these should never connect to DB
+// SKIP if explicitly disabled via configuration
+// In Development: auto-apply migrations if enabled via config
+// In Production: migrations should be applied manually or via CI/CD pipeline
+var isDesignTime = EF.IsDesignTime || 
+                   Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") == "Design" ||
+                   Environment.GetEnvironmentVariable("EF_DESIGN_TIME") == "true";
+
+if (!isDesignTime)
 {
-    var migrator = scope.ServiceProvider.GetRequiredService<CharterCompare.Infrastructure.Migrations.IDatabaseMigrator>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    
-    try
+    using (var scope = app.Services.CreateScope())
     {
-        await migrator.MigrateAsync();
-        logger.LogInformation("Database migration completed successfully.");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Error during database migration.");
-        // Don't delete and recreate in production - just log the error
-        if (app.Environment.IsDevelopment())
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        
+        try
         {
-            try
+            // Check if auto-migration is enabled (default: false - must be explicitly enabled)
+            // This ensures no database connection during design-time EF tooling operations
+            var autoMigrate = configuration.GetValue<bool>("Database:AutoMigrate", defaultValue: false);
+            
+            if (autoMigrate)
             {
-                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                logger.LogWarning("Development mode: Attempting to recreate database...");
-                await dbContext.Database.EnsureDeletedAsync();
-                await dbContext.Database.EnsureCreatedAsync();
-                logger.LogInformation("Database recreated successfully.");
+                logger.LogInformation("Auto-migration is enabled. Applying pending EF Core migrations...");
+                
+                // Get pending migrations
+                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+                if (pendingMigrations.Any())
+                {
+                    logger.LogInformation("Found {Count} pending migration(s): {Migrations}", 
+                        pendingMigrations.Count(), string.Join(", ", pendingMigrations));
+                }
+                
+                // Apply migrations
+                await dbContext.Database.MigrateAsync();
+                logger.LogInformation("Database migrations applied successfully.");
+                
+                // Log applied migrations
+                var appliedMigrations = await dbContext.Database.GetAppliedMigrationsAsync();
+                logger.LogInformation("Applied migrations: {Migrations}", string.Join(", ", appliedMigrations));
             }
-            catch (Exception recreateEx)
+            else
             {
-                logger.LogError(recreateEx, "Failed to recreate database.");
+                logger.LogInformation("Auto-migration is disabled (Database:AutoMigrate=false). Use 'dotnet ef database update' to apply migrations manually.");
+                // Note: We do NOT check for pending migrations here to avoid unnecessary database connection
+                // Use 'dotnet ef migrations list' to check pending migrations without connecting during app startup
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during database migration.");
+            
+            // In Development, provide helpful error messages
+            if (app.Environment.IsDevelopment())
+            {
+                logger.LogError("If this is the first run, ensure the database exists and connection string is correct.");
+                logger.LogError("You can create the database manually or let migrations create it on first run.");
+                logger.LogError("Connection string: {ConnectionString}", 
+                    configuration.GetConnectionString("DefaultConnection") ?? "Not configured");
+            }
+            
+            // In Production, fail fast - don't start the app with migration errors
+            if (app.Environment.IsProduction())
+            {
+                throw;
             }
         }
     }
