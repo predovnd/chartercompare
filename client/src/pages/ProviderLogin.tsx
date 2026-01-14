@@ -20,7 +20,7 @@ export function ProviderLogin() {
   const navigate = useNavigate();
 
   const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE_URL}/api/auth/google`;
+    window.location.href = `${API_BASE_URL}/api/auth/google?userType=operator`;
   };
 
   const handleEmailAuth = async (e: React.FormEvent) => {

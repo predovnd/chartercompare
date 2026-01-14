@@ -32,7 +32,8 @@ public class AuthController : ControllerBase
             return BadRequest(new { error = "Google OAuth is not configured. Please add ClientId and ClientSecret to appsettings.json" });
         }
         
-        var redirectUrl = "http://localhost:5000/api/auth/google-callback";
+        // Build redirect URL dynamically based on current request
+        var redirectUrl = $"{Request.Scheme}://{Request.Host}/api/auth/google-callback";
         
         _logger.LogInformation("=== Google OAuth Configuration ===");
         _logger.LogInformation("User Type: {UserType}", userType);
